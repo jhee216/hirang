@@ -8,6 +8,7 @@ import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 
 // 출력(sRGB) 뒤에 얹는 마무리: 하이라이트를 따뜻하게, 가장자리를 살짝 어둡게, 아주 옅은 종이 그레인
 const FinishShader = {
@@ -29,11 +30,11 @@ const FinishShader = {
 };
 
 export function createPost(renderer, scene, camera, { high, overlay }) {
-  // 후처리 버퍼에도 4배 MSAA: 이게 없으면 renderer의 antialias가 무시되어 문틀·책장 가장자리가 계단처럼 깨져 보인다
-  const target = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
-  const composer = new EffectComposer(renderer, target);
+  // 후처리를 거치면 renderer의 antialias가 무시되어 가장자리가 계단처럼 깨진다.
+  // 버퍼 MSAA는 모든 패스마다 비용이 반복돼 버벅이므로, 마지막에 한 번만 SMAA로 가장자리를 다듬는다.
+  const composer = new EffectComposer(renderer);
   // 해상도: 화면 밀도를 최대한 따르되(휴대폰·아이패드도 흐리지 않게) 전체 픽셀 수는 성능 한도 안으로
-  const ratio = () => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt((high ? 4.2e6 : 2.8e6) / (innerWidth * innerHeight))));
+  const ratio = () => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt((high ? 2.6e6 : 1.8e6) / (innerWidth * innerHeight))));
   composer.setPixelRatio(ratio());
   composer.setSize(innerWidth, innerHeight);
   composer.addPass(new RenderPass(scene, camera));
@@ -41,7 +42,7 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
   let ao = null, bokeh = null;
   if (high) {
     ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-    ao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.6, thickness: 1.4, scale: 1.0, samples: 12 });
+    ao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.6, thickness: 1.4, scale: 1.0, samples: 8 });
     ao.blendIntensity = 0.7;
     composer.addPass(ao);
     bokeh = new BokehPass(scene, camera, { focus: 5, aperture: 0.0006, maxblur: 0.0028 });
@@ -56,6 +57,8 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
     composer.addPass(ov);
   }
   composer.addPass(new OutputPass());
+  const smaa = new SMAAPass(innerWidth * ratio(), innerHeight * ratio());
+  composer.addPass(smaa);
   const finish = new ShaderPass(FinishShader);
   composer.addPass(finish);
 
@@ -68,7 +71,8 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
       focus += (target - focus) * (1 - Math.exp(-4 * dt));
       if (bokeh) bokeh.uniforms.focus.value = focus;
     },
-    setAperture(a) { if (bokeh) bokeh.uniforms.aperture.value = a; },
+    // 흐림이 없을 때(둘러보기)는 심도 패스 자체를 끈다
+    setAperture(a) { if (bokeh) { bokeh.uniforms.aperture.value = a; bokeh.enabled = a > 0; } },
     resize() {
       composer.setPixelRatio(ratio());
       composer.setSize(innerWidth, innerHeight);

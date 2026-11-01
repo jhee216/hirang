@@ -182,6 +182,7 @@ room.obstacles.push(...people.obstacles);
 // 패키지마다 위에서 비추는 작은 조명(멀리서도 눈에 띄게)
 for (const p of room.packageSpots) {
   const sp = new THREE.SpotLight('#FFF4DF', 9, 5.2, 0.3, 0.65, 1.3);
+  lamps.push(sp);
   sp.position.set(p.x * 0.8, 3.95, p.z + 0.9);
   sp.target.position.copy(p);
   scene.add(sp, sp.target);
@@ -1126,7 +1127,7 @@ setInterval(applyDaylight, 30 * 1000);   // 30초마다 해 위치·시계를 �
 
 const IDLE_RETURN_MS = 60000;
 const LURE_DELAY = 7000;   // 문 앞에서 7초 동안 움직임이 없으면 빛이 새어 나온다
-let lastInput = performance.now(), lure = 0;
+let lastInput = performance.now(), lure = 0, frameNo = 0;
 ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => addEventListener(ev, () => { lastInput = performance.now(); }, { passive: true }));
 
 const clock = new THREE.Clock();
@@ -1173,13 +1174,38 @@ renderer.setAnimationLoop(() => {
   if (insp.live && active) updateInspect(dt);
   updateOverlayLight();
   updateFocus(dt);
-  renderer.shadowMap.needsUpdate = true;
+  updateZone();
+  // 그림자는 두 프레임에 한 번 갱신(움직이는 건 관람객뿐이라 눈에 띄지 않고, 그림자 계산이 절반으로 준다)
+  renderer.shadowMap.needsUpdate = (frameNo++ & 1) === 0;
   post.render(t);
 });
 
 if (returning) enterRoomDirect();
 
 // 첫 프레임 이후 로더 제거 → 문 등장(돌아온 경우에는 바로 독서구역)
+/* ---------- 조명 구역: 지금 보이는 곳의 조명만 켠다(조명 수가 곧 모든 픽셀의 계산량이라 버벅임의 주원인) ---------- */
+// 문 앞(바깥): 문 위 조명·벽등·문틈 빛 / 방 안: 천장 스포트·램프·패키지 조명·안뜰 문 조명
+const lightsIn = (root) => { const a = []; root.traverse((o) => { if (o.isLight) a.push(o); }); return a; };
+const outsideLights = [doorLight, ...lightsIn(door.group)];
+const insideLights = [...new Set([...lamps, hoverLight, ...lightsIn(room.group)])];
+let zoneKey = '';
+function setZone(out, inn) {
+  const key = `${+out}${+inn}`;
+  if (key === zoneKey) return;
+  zoneKey = key;
+  for (const l of outsideLights) l.visible = out;
+  for (const l of insideLights) l.visible = inn;
+}
+function updateZone() {
+  const atDoorSide = state.is(S.INITIAL, S.DOOR_HOVER);
+  const crossing = state.is(S.DOOR_OPENING, S.CAMERA_ENTERING, S.LEAVING);
+  setZone(atDoorSide || crossing || camera.position.z > -0.6, !atDoorSide);
+}
+// 구역이 바뀔 때 셰이더를 새로 만드느라 멈추지 않도록, 세 가지 조명 조합을 로딩 중에 미리 준비해 둔다
+for (const [o, i] of [[true, true], [false, true], [true, false]]) { setZone(o, i); renderer.compile(scene, camera); }
+renderer.compile(overlay, camera);
+updateZone();
+
 let revealed = false;
 function reveal() {
   if (revealed) return; revealed = true;
@@ -1195,5 +1221,6 @@ window.__hirang = {
   closeBook: () => ui.rClose.click(), openables: room.openables.map((o) => o.label),
   spread: () => active?.spread, camera, door: doorFx, rig,
   project(o3d) { const v = o3d.getWorldPosition(new THREE.Vector3()).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; },
+  renderer, post, scene,
   objects: room.openables, doorMesh: door.hit[0], insp, pkgGo, pkgStep, exitRoom, people, setIdle: (ms) => { lastInput = performance.now() - ms; },
 };
