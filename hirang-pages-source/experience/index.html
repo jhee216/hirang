@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>비밀독서구역 하이랑 · Secret Reading Zone</title>
+<meta name="description" content="비밀의 문을 열고 하이랑의 비밀독서구역으로 들어가 큐레이션을 발견하는 3D 인터랙티브 경험">
+<meta name="theme-color" content="#FFF9EA">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/experience.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app" data-state="INITIAL">
+  <canvas id="scene" aria-label="비밀독서구역 하이랑 3D 공간" role="img"></canvas>
+
+  <header class="top">
+    <div class="top-l">
+      <a class="logo" href="../index.html?view=website" aria-label="하이랑 홈으로"><img src="assets/logo-wordmark.png" alt="hirang"></a>
+      <div class="daymode" role="radiogroup" aria-label="조명 시간">
+        <span class="dm-clock" id="dmClock" aria-live="off"></span>
+        <button type="button" role="radio" data-mode="auto" aria-checked="true" title="지금 시각의 실제 해 흐름">실시간</button>
+        <button type="button" role="radio" data-mode="day" aria-checked="false" title="언제든 낮 조명으로 보기">낮</button>
+        <button type="button" role="radio" data-mode="night" aria-checked="false" title="언제든 밤 조명으로 보기">밤</button>
+      </div>
+    </div>
+    <nav class="top-r" aria-label="경험 메뉴">
+      <button type="button" id="skipIntro" class="ghost">바로 입장</button>
+      <button type="button" id="bgmBtn" class="ghost" aria-pressed="true" hidden>♪ BGM 켜짐</button>
+      <a class="ghost" id="homeBtn" href="../index.html?view=website">홈으로 돌아가기</a>
+    </nav>
+  </header>
+
+  <button type="button" id="doorHint" class="door-hint">
+    <b>OPEN THE SECRET ZONE</b><span>문을 눌러 비밀독서구역으로 들어가세요</span>
+  </button>
+
+  <p id="exploreHint" class="explore-hint" aria-hidden="true"><b>DRAG TO EXPLORE</b><span>바닥을 누르거나 휠로 걸어가고, 드래그로 둘러보세요</span></p>
+
+  <div id="hoverHint" class="hover-hint" aria-hidden="true"><b></b><span></span></div>
+
+  <nav id="objects" class="objects" aria-label="독서구역 오브젝트 선택" hidden></nav>
+  <nav id="stations" class="stations" aria-label="관람 지점" hidden>
+    <button type="button" id="stPrev" class="st-arrow" aria-label="이전 관람 지점">‹</button>
+    <div id="stationList" class="st-list"></div>
+    <button type="button" id="stNext" class="st-arrow" aria-label="다음 관람 지점">›</button>
+  </nav>
+
+  <section id="reader" class="reader" hidden aria-label="펼친 책">
+    <div class="r-meta"><b id="rTitle"></b><span id="rSub"></span></div>
+    <div class="r-nav">
+      <button type="button" id="rPrev" aria-label="이전 페이지">←</button>
+      <span class="r-mid"><span id="rPage" class="r-page" aria-live="polite"></span><input type="range" id="rRange" class="r-range" min="0" max="1000" value="0" aria-label="패키지 열림 정도" hidden></span>
+      <button type="button" id="rNext" aria-label="다음 페이지">→</button>
+    </div>
+    <div class="r-act">
+      <a id="rMore" class="r-more" href="#">자세히 보기 ↗</a>
+      <button type="button" id="rLarge" class="r-large" aria-pressed="false">크게 읽기</button>
+      <button type="button" id="rClose">책 닫기</button>
+      <button type="button" id="rOpen" hidden>다시 펼치기</button>
+      <button type="button" id="rBack" class="r-back">독서구역으로 돌아가기</button>
+    </div>
+  </section>
+  <p id="rText" class="r-text" aria-live="polite"></p>
+
+  <div id="fade" class="fade" aria-hidden="true"></div>
+  <p id="toast" class="toast" role="status"></p>
+  <div id="exitAsk" class="exit-ask" role="alertdialog" aria-modal="true" aria-labelledby="exitAskT" aria-describedby="exitAskD" hidden>
+    <p id="exitAskT" class="ea-t">비밀독서구역을 나가시겠습니까?</p>
+    <p id="exitAskD" class="ea-d">나가면 하이랑 웹페이지로 이동합니다.</p>
+    <div class="ea-b"><button type="button" id="exitStay" class="ea-stay">더 둘러보기</button><button type="button" id="exitGo" class="ea-go">나가기</button></div>
+  </div>
+  <div id="loader" class="loader" aria-hidden="true"><img src="assets/logo-wordmark.png" alt=""><span>SECRET READING ZONE</span></div>
+  <p id="live" class="sr" aria-live="polite"></p>
+
+  <!-- WebGL 미지원 / 로드 실패 시 대체 탐색 -->
+  <section id="fallback" class="fallback" aria-label="비밀독서구역 목록">
+    <img src="assets/logo-wordmark.png" alt="hirang">
+    <h1>비밀독서구역 하이랑</h1>
+    <p>이 브라우저에서는 3D 공간을 열 수 없어 목록으로 안내합니다.</p>
+    <h2>오늘 만날 수 있는 비밀</h2>
+    <ul class="fb-books">
+      <li><a href="../index.html#01" style="--c:#F6EFE4">01 첫 장 <small>에세이</small></a></li>
+      <li><a href="../index.html#02" style="--c:#EFCAC4">02 끌림 <small>소설·미스터리</small></a></li>
+      <li><a href="../index.html#03" style="--c:#D9D4CE">03 머묾 <small>소설·SF</small></a></li>
+      <li><a href="../index.html#04" style="--c:#E8C9B3">04 하이 <small>소설·로맨스</small></a></li>
+      <li><a href="../index.html#05" style="--c:#C9C2D6">05 깊이 <small>소설·스릴러</small></a></li>
+      <li><a href="../index.html#06" style="--c:#E2D5C3">06 다시 <small>에세이</small></a></li>
+      <li><a href="../index.html#07" style="--c:#D8DCC4">07 한 줄 <small>인문·교양</small></a></li>
+      <li><a href="../index.html#08" style="--c:#B0A8C9">08 새벽 <small>소설·판타지</small></a></li>
+      <li><a href="../index.html#09" style="--c:#B49DC2">09 랑 <small>에세이·인문</small></a></li>
+    </ul>
+    <h2>큐레이션 패키지</h2>
+    <ul class="fb-pk">
+      <li><a href="../index.html#packaging" style="--c:#4F5F4C">Ch1 · 하이랑 큐레이션</a></li>
+      <li><a href="../index.html#packaging" style="--c:#C1B1D1">Ch2 · Selection Curation</a></li>
+      <li><a href="../index.html#packaging" style="--c:#FDF9C6">Ch3 · Archive Curation</a></li>
+    </ul>
+    <a class="fb-home" href="../index.html?view=website">하이랑 홈으로 →</a>
+  </section>
+</div>
+<script type="module" src="js/main.js" onerror="document.documentElement.classList.add('no-webgl')"></script>
+<script>
+  // 외부 라이브러리 로드 실패 등으로 경험이 시작되지 않으면 대체 UI로 전환
+  setTimeout(function(){ if(!window.__hirang) document.documentElement.classList.add('no-webgl') }, 15000);
+</script>
+</body>
+</html>

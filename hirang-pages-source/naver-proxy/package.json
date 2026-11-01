@@ -1,0 +1,17 @@
+{
+  "name": "hirang-naver-proxy",
+  "version": "1.0.0",
+  "description": "하이랑 GS25/CU 편의점 검색을 위한 네이버 지역검색 API 프록시 서버",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
