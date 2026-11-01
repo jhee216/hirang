@@ -29,12 +29,26 @@ const FinishShader = {
     }`,
 };
 
+// 품질 단계: 느려지면 '눈에 덜 띄는 것'부터 한 단계씩 덜어 내고, 여유가 생기면 되돌린다.
+//   scale  = 화면 밀도 대비 렌더 해상도(SMAA가 가장자리를 다듬어 0.8까지는 거의 티가 나지 않는다)
+//   shadow = 그림자 맵 갱신 간격(프레임). 움직이는 건 관람객뿐이라 2~3프레임 간격은 보이지 않는다
+//   ao     = 접지 그림자(AO) 사용 여부. AO는 처음부터 절반 해상도로 계산한다(부드러운 그늘이라 차이가 없다)
+export const QUALITY = [
+  { scale: 1.0, shadow: 2, ao: true },
+  { scale: 0.9, shadow: 2, ao: true },
+  { scale: 0.8, shadow: 3, ao: true },
+  { scale: 0.72, shadow: 3, ao: false },
+  { scale: 0.62, shadow: 4, ao: false },
+];
+
 export function createPost(renderer, scene, camera, { high, overlay }) {
   // 후처리를 거치면 renderer의 antialias가 무시되어 가장자리가 계단처럼 깨진다.
   // 버퍼 MSAA는 모든 패스마다 비용이 반복돼 버벅이므로, 마지막에 한 번만 SMAA로 가장자리를 다듬는다.
   const composer = new EffectComposer(renderer);
-  // 해상도: 화면 밀도를 최대한 따르되(휴대폰·아이패드도 흐리지 않게) 전체 픽셀 수는 성능 한도 안으로
-  const ratio = () => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt((high ? 2.6e6 : 1.8e6) / (innerWidth * innerHeight))));
+  // 기준 해상도: 화면 밀도를 따르되(최대 2배) 전체 픽셀 수 상한 안에서. 실제 해상도 = 기준 × 품질 단계의 scale
+  const base = () => Math.min(devicePixelRatio, 2, Math.sqrt((high ? 3.2e6 : 2.2e6) / (innerWidth * innerHeight)));
+  let level = high ? 0 : 1;
+  const ratio = () => Math.max(0.6, base() * QUALITY[level].scale);
   composer.setPixelRatio(ratio());
   composer.setSize(innerWidth, innerHeight);
   composer.addPass(new RenderPass(scene, camera));
@@ -44,11 +58,16 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
     ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
     ao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.6, thickness: 1.4, scale: 1.0, samples: 8 });
     ao.blendIntensity = 0.7;
+    // AO는 저주파(부드러운 그늘)라 절반 해상도로 계산해 원래 크기로 섞는다: 비용은 1/4, 모양은 그대로
+    const aoSize = ao.setSize.bind(ao);
+    ao.setSize = (w, h) => aoSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
     composer.addPass(ao);
     bokeh = new BokehPass(scene, camera, { focus: 5, aperture: 0.0006, maxblur: 0.0028 });
+    bokeh.enabled = false;
     composer.addPass(bokeh);
   }
   const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.08, 0.55, 0.97);
+  // (빛 번짐은 해상도를 낮추면 번지는 반경이 넓어져 문틈 빛 모양이 달라지므로 그대로 둔다)
   composer.addPass(bloom);
   // 고른 물체 층: 깊이만 지우고 위에 그린다(흐림·AO·빛 번짐 없이 또렷하게)
   if (overlay) {
@@ -61,11 +80,28 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
   composer.addPass(smaa);
   const finish = new ShaderPass(FinishShader);
   composer.addPass(finish);
+  composer.setSize(innerWidth, innerHeight);   // 위에서 바꾼 AO·빛 번짐 크기 규칙을 적용
+
+  function applyLevel() {
+    composer.setPixelRatio(ratio());
+    composer.setSize(innerWidth, innerHeight);
+    if (ao) ao.enabled = QUALITY[level].ao;
+  }
 
   let focus = 5;
   let reading = false;
   return {
     composer, ao, bokeh,
+    get level() { return level; },
+    get shadowEvery() { return QUALITY[level].shadow; },
+    // 품질 단계 바꾸기(0 = 최고). 프레임이 모자라면 main.js가 한 단계씩 내린다
+    setLevel(i) {
+      const n = Math.max(0, Math.min(QUALITY.length - 1, i));
+      if (n === level) return false;
+      level = n; applyLevel();
+      return true;
+    },
+    pixelRatio: () => ratio(),
     // 초점 거리(m)를 부드럽게 따라간다
     setFocus(target, dt) {
       focus += (target - focus) * (1 - Math.exp(-4 * dt));
@@ -73,11 +109,7 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
     },
     // 흐림이 없을 때(둘러보기)는 심도 패스 자체를 끈다
     setAperture(a) { if (bokeh) { bokeh.uniforms.aperture.value = a; bokeh.enabled = a > 0; } },
-    resize() {
-      composer.setPixelRatio(ratio());
-      composer.setSize(innerWidth, innerHeight);
-      ao?.setSize(innerWidth, innerHeight);
-    },
+    resize() { applyLevel(); },
     // 읽는 동안에는 빛 번짐을 줄여 글자 대비를 지킨다
     setReading(on) { reading = on; bloom.strength = on ? 0.03 : 0.08; },
     // 문틈 빛처럼 아주 밝은 곳만 번지게(문 앞 유혹 동안)

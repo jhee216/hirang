@@ -940,7 +940,8 @@ function syncReader(spread = active?.spread ?? 0) {
   const o = active;
   const reading = state.is(S.BOOK_READING);
   ui.rRange.hidden = !isPkg(o);
-  ui.rClose.textContent = isPkg(o) ? '다시 닫기' : '책 닫기';
+  // 패키지: 다 닫혀 있으면 같은 자리 버튼이 '열기'가 된다
+  ui.rClose.textContent = isPkg(o) ? (o.open <= 0.001 ? '열기' : '다시 닫기') : '책 닫기';
   if (isPkg(o)) {
     const k = o.stepAt(o.open);
     ui.rPage.textContent = `${o.steps[k][0]} · ${k + 1}/${o.steps.length}`;
@@ -979,7 +980,7 @@ ui.rPrev.addEventListener('click', () => turn(-1));
 ui.rNext.addEventListener('click', () => turn(1));
 ui.rClose.addEventListener('click', () => {
   if (!state.is(S.BOOK_READING)) return;
-  if (isPkg(active)) pkgGo(0);
+  if (isPkg(active)) pkgGo(active.open <= 0.001 ? 1 : 0);
   else if (!active.flipping) closeBook();
 });
 // 패키지 열림 정도를 직접 끌어 본다(원본 슬라이더와 같은 0~1000)
@@ -1131,7 +1132,37 @@ let lastInput = performance.now(), lure = 0, frameNo = 0;
 ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => addEventListener(ev, () => { lastInput = performance.now(); }, { passive: true }));
 
 const clock = new THREE.Clock();
+/* ---------- 성능 조절: 실제 FPS를 1초마다 재서, 모자라면 품질을 한 단계 내리고 여유가 있으면 되돌린다 ---------- */
+// 데스크톱은 60FPS 가까이(55 미만이 2초 이어지면 한 단계 ↓), 휴대폰·아이패드는 30FPS 이상(30 미만이 2초면 ↓).
+// 되돌린 뒤 곧바로 다시 느려지면 그 단계를 상한으로 삼아 오르내림을 반복하지 않는다.
+let revealed = false;   // 로더가 걷힌 뒤부터 FPS를 판단한다
+const perf = { target: coarse ? 30 : 55, up: coarse ? 52 : 58.5, acc: 0, n: 0, slow: 0, fast: 0, last: performance.now(), fps: 0, ceiling: 0, raisedAt: -1e9, log: [] };
+function govern(now) {
+  const ms = now - perf.last; perf.last = now;
+  if (ms > 250 || document.hidden) { perf.acc = perf.n = 0; return; }   // 탭 전환·멈춤은 계산에서 뺀다
+  perf.acc += ms; perf.n++;
+  if (perf.acc < 1000) return;
+  const fps = (1000 * perf.n) / perf.acc;
+  perf.fps = Math.round(fps); perf.acc = perf.n = 0;
+  if (!revealed) return;
+  if (fps < perf.target) {
+    perf.fast = 0;
+    if (++perf.slow >= 2) {
+      perf.slow = 0;
+      if (now - perf.raisedAt < 8000) perf.ceiling = post.level + 1;     // 올렸더니 곧 느려짐 → 그 아래가 이 기기의 한계
+      if (post.setLevel(post.level + 1)) perf.log.push(`↓${post.level} @${perf.fps}fps`);
+    }
+  } else if (fps > perf.up) {
+    perf.slow = 0;
+    if (++perf.fast >= 5 && post.level > perf.ceiling) {
+      perf.fast = 0;
+      if (post.setLevel(post.level - 1)) { perf.raisedAt = now; perf.log.push(`↑${post.level} @${perf.fps}fps`); }
+    }
+  } else perf.slow = perf.fast = 0;
+}
+
 renderer.setAnimationLoop(() => {
+  govern(performance.now());
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   // 문 앞에서는 대기하고 내부에서 1분간 입력이 없으면 문 앞부터 다시 시작한다.
@@ -1175,8 +1206,8 @@ renderer.setAnimationLoop(() => {
   updateOverlayLight();
   updateFocus(dt);
   updateZone();
-  // 그림자는 두 프레임에 한 번 갱신(움직이는 건 관람객뿐이라 눈에 띄지 않고, 그림자 계산이 절반으로 준다)
-  renderer.shadowMap.needsUpdate = (frameNo++ & 1) === 0;
+  // 그림자는 몇 프레임에 한 번만 갱신(움직이는 건 관람객뿐이라 눈에 띄지 않는다). 간격은 품질 단계가 정한다
+  renderer.shadowMap.needsUpdate = frameNo++ % post.shadowEvery === 0;
   post.render(t);
 });
 
@@ -1202,11 +1233,42 @@ function updateZone() {
   setZone(atDoorSide || crossing || camera.position.z > -0.6, !atDoorSide);
 }
 // 구역이 바뀔 때 셰이더를 새로 만드느라 멈추지 않도록, 세 가지 조명 조합을 로딩 중에 미리 준비해 둔다
-for (const [o, i] of [[true, true], [false, true], [true, false]]) { setZone(o, i); renderer.compile(scene, camera); }
-renderer.compile(overlay, camera);
+// 준비는 '보이는 물체'만 대상으로 하므로, 그동안만 숨겨 둔 물체(관람객·책 페이지·빛 판 등)도 모두 보이게 한다.
+// 조명은 구역 설정을 따라야 하므로 그대로 둔다. (가능하면 병렬 컴파일로 — 로딩 중 화면이 멈추지 않게)
+// 실제 화면은 후처리 버퍼(선형 색·톤매핑 없음)에 그리므로, 같은 버퍼를 대상으로 준비해야 같은 프로그램이 만들어진다.
+const hiddenForWarm = [];
+scene.traverse((o) => { if (!o.visible && !o.isLight) { hiddenForWarm.push(o); o.visible = true; } });
+const toBuffer = () => renderer.setRenderTarget(post.composer.renderTarget1);   // 기다리는 사이 다른 프레임이 바꿔 놓을 수 있어 매번 지정
+for (const [o, i] of [[true, true], [false, true], [true, false]]) {
+  setZone(o, i);
+  toBuffer();
+  try { await renderer.compileAsync(scene, camera); } catch (e) { renderer.compile(scene, camera); }
+  toBuffer();
+  renderer.shadowMap.needsUpdate = true;      // 그림자용 프로그램도 이 조합으로 한 번 만들어 둔다
+  renderer.render(scene, camera);
+}
+toBuffer();
+try { await renderer.compileAsync(overlay, camera); } catch (e) { renderer.compile(overlay, camera); }
+toBuffer();
+// 방 안의 이미지(책 표지·패키지·보드 등)도 미리 그래픽 메모리에 올리고, 그림자도 한 번 그려 둔다
+// → 문을 열고 방이 처음 보이는 순간 0.2초쯤 멈칫하던 것을 없앤다
+{
+  const seen = new Set();
+  const upload = (root) => root.traverse((o) => {
+    for (const mat of [].concat(o.material || [])) {
+      for (const k of ['map', 'emissiveMap', 'bumpMap', 'normalMap', 'roughnessMap', 'alphaMap', 'aoMap']) {
+        const t = mat[k];
+        if (t && !seen.has(t)) { seen.add(t); renderer.initTexture(t); }
+      }
+    }
+  });
+  upload(scene); upload(overlay);
+}
+renderer.setRenderTarget(null);
+for (const o of hiddenForWarm) o.visible = false;
+zoneKey = '';
 updateZone();
 
-let revealed = false;
 function reveal() {
   if (revealed) return; revealed = true;
   ui.loader.classList.add('done');
@@ -1221,6 +1283,6 @@ window.__hirang = {
   closeBook: () => ui.rClose.click(), openables: room.openables.map((o) => o.label),
   spread: () => active?.spread, camera, door: doorFx, rig,
   project(o3d) { const v = o3d.getWorldPosition(new THREE.Vector3()).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; },
-  renderer, post, scene,
+  renderer, post, scene, perf,
   objects: room.openables, doorMesh: door.hit[0], insp, pkgGo, pkgStep, exitRoom, people, setIdle: (ms) => { lastInput = performance.now() - ms; },
 };
