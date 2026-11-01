@@ -39,7 +39,7 @@ if (reduced) gsap.globalTimeline.timeScale(2.4);
 
 /* ---------- 렌더러 · 씬 ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, coarse ? 1.5 : 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;   // 브랜드 색이 바래지 않는 톤 매핑
@@ -68,9 +68,17 @@ applyFov();
 scene.add(camera);
 const rig = new CameraRig(camera);
 // 문 앞 시작 거리: 세로 화면은 시야가 넓어 문이 작아 보이므로 더 가까이 선다(문이 화면에 같은 크기로)
+// 문 앞 시작 거리: 기본 거리에 서되, 화면이 좁아 문 양옆 벽등까지 다 안 들어오면 그만큼 물러선다
+// (휴대폰 세로·아이패드에서 벽등이 화면 끝에 반쯤 잘려 깨져 보이지 않게)
+function startZ() {
+  const base = isPortrait() ? CAMERA.portrait.startZ : CAMERA.start[2];
+  const need = DOOR.width / 2 + 0.42 + 0.22;                       // 문 반폭 + 벽등 + 여유(m)
+  const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * 0.9;
+  return THREE.MathUtils.clamp(need / halfTan + DOOR.wallThickness / 2, base, 7.5);
+}
 function placeStart() {
   if (!state?.is(S.INITIAL, S.DOOR_HOVER)) return;
-  rig.pos.set(CAMERA.start[0], CAMERA.start[1], isPortrait() ? CAMERA.portrait.startZ : CAMERA.start[2]);
+  rig.pos.set(CAMERA.start[0], CAMERA.start[1], startZ());
 }
 
 /* ---------- 조명 ---------- */
@@ -84,7 +92,7 @@ const roomSun = new THREE.SpotLight('#FFF0D6', 6.2, 0, 0.55, 0.35, 0);
 roomSun.position.set(-10.2, 7.4, 0.8);
 roomSun.target.position.set(1.6, 0.2, -5.2);
 roomSun.castShadow = true;
-roomSun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
+roomSun.shadow.mapSize.set(2048, 2048);   // 휴대폰·아이패드도 그림자 가장자리가 깨지지 않게
 roomSun.shadow.camera.near = 4; roomSun.shadow.camera.far = 22;
 roomSun.shadow.bias = -0.0005; roomSun.shadow.normalBias = 0.02; roomSun.shadow.radius = 3;
 scene.add(roomSun, roomSun.target);
@@ -94,7 +102,7 @@ const sun = new THREE.DirectionalLight('#FFFAF0', SUN);
 sun.position.set(-7.5, 6.2, 3.4);   // 벽을 비스듬히 스치는 해: 벽에 명암 기울기와 문틀 그림자가 생긴다
 sun.target.position.set(0, 0.8, -1);
 sun.castShadow = true;
-sun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
+sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -6, near: 1, far: 24 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 4;
 scene.add(sun, sun.target);
@@ -160,7 +168,7 @@ await loadLogos();
 const door = buildDoor();
 // 화면 비율이 바뀌면 문 앞 구성도 그 비율에 맞게 다시 잡는다(명판 위치·크기)
 function fitPlaque() {
-  const d = (isPortrait() ? CAMERA.portrait.startZ : CAMERA.start[2]) - DOOR.wallThickness / 2;
+  const d = startZ() - DOOR.wallThickness / 2;
   door.placePlaque(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * d * camera.aspect);
 }
 fitPlaque();

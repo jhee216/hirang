@@ -162,3 +162,12 @@ button{font:inherit;color:inherit;cursor:pointer}
   .dm-clock{padding:0 6px}
   .daymode button{padding:5px 8px}
 }
+
+/* 좁은 화면: 문 앞 안내 문구가 두 줄로 꺾이지 않게 */
+@media (max-width:480px){
+  .door-hint b{font-size:12px;letter-spacing:.2em;white-space:nowrap}
+  .door-hint span{white-space:nowrap}
+}
+/* 밤(실시간 밤·밤 모드): 어두운 바닥 위 안내 문구는 아이보리로 */
+#app[data-daypart="night"] .door-hint{color:var(--ivory);text-shadow:0 1px 10px rgba(12,12,12,.55)}
+#app[data-daypart="night"] .door-hint span{color:rgba(255,249,234,.82)}

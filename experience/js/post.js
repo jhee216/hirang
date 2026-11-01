@@ -29,9 +29,12 @@ const FinishShader = {
 };
 
 export function createPost(renderer, scene, camera, { high, overlay }) {
-  const composer = new EffectComposer(renderer);
-  const pr = Math.min(devicePixelRatio, high ? 1.5 : 1.25);
-  composer.setPixelRatio(pr);
+  // 후처리 버퍼에도 4배 MSAA: 이게 없으면 renderer의 antialias가 무시되어 문틀·책장 가장자리가 계단처럼 깨져 보인다
+  const target = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
+  const composer = new EffectComposer(renderer, target);
+  // 해상도: 화면 밀도를 최대한 따르되(휴대폰·아이패드도 흐리지 않게) 전체 픽셀 수는 성능 한도 안으로
+  const ratio = () => Math.max(1, Math.min(devicePixelRatio, 2, Math.sqrt((high ? 4.2e6 : 2.8e6) / (innerWidth * innerHeight))));
+  composer.setPixelRatio(ratio());
   composer.setSize(innerWidth, innerHeight);
   composer.addPass(new RenderPass(scene, camera));
 
@@ -67,7 +70,7 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
     },
     setAperture(a) { if (bokeh) bokeh.uniforms.aperture.value = a; },
     resize() {
-      composer.setPixelRatio(Math.min(devicePixelRatio, high ? 1.5 : 1.25));
+      composer.setPixelRatio(ratio());
       composer.setSize(innerWidth, innerHeight);
       ao?.setSize(innerWidth, innerHeight);
     },
