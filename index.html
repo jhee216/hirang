@@ -7579,10 +7579,11 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){document.docum
     if(c&&(c.open||c.count))return true;
     return !!document.querySelector('.story.open,.am.show,.mp-show,.hcw-panel.open,[role="dialog"][aria-hidden="false"]:not(#hlLock)');
   }
-  function lock(){
+  function lock(force){
     if(on)return;
     clearTimeout(t);
-    if(!inFlow()){location.assign('experience/index.html');return}
+    // 가만히 있을 때(유휴)만 홈에서 비밀의 문으로 보낸다. '잠금 화면' 버튼을 직접 누르면 언제나 모션 잠금을 띄운다
+    if(force!==true&&!inFlow()){location.assign('experience/index.html');return}
     on=true;closing=false;opener=document.activeElement;
     inertNodes=Array.prototype.map.call(document.body.children,function(el){
       var was=el.inert;if(el!==L)el.inert=true;return {el:el,was:was};
@@ -7607,7 +7608,7 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){document.docum
   L.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();unlock()});
   L.addEventListener('click',function(e){e.stopPropagation()});
   var b=document.getElementById('h2LockBtn');
-  if(b){['pointerdown','pointerup','click','touchstart'].forEach(function(ev){b.addEventListener(ev,function(e){e.stopPropagation()})});b.addEventListener('click',function(e){e.preventDefault();lock()})}
+  if(b){['pointerdown','pointerup','click','touchstart'].forEach(function(ev){b.addEventListener(ev,function(e){e.stopPropagation()})});b.addEventListener('click',function(e){e.preventDefault();lock(true)})}
   arm();
   window.__lock={lock:lock,unlock:unlock,on:function(){return on},refresh:arm,inFlow:inFlow,setIdle:function(ms){if(Number.isFinite(ms)&&ms>0){IDLE=ms;arm()}}};
 })();
