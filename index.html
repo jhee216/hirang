@@ -4911,7 +4911,7 @@ function fpFmt(t){
       });
     }
     // 네이버 지역검색 프록시 서버 주소(예전 전체 사이트와 같은 값). 배포 주소가 생기면 이 값만 바꾸면 된다. 비우면 프록시를 쓰지 않는다
-    var NAVER_PROXY_BASE_URL='';
+    var NAVER_PROXY_BASE_URL='https://hirang-naver-proxy.vercel.app';
     function setPx(st){if(S.px===st)return;S.px=st;var el=document.getElementById('ctPx');if(el){el.className='ct-px '+st;el.innerHTML=pxHTML()}}
     function pxHTML(){return '<i></i>'+(S.px==='live'?'실시간 네이버 검색 연결됨':S.px==='off'?'네이버 검색 서버 연결 안 됨 · 제휴 편의점 목록으로 찾습니다':'네이버 검색 서버 연결 확인 중…')}
     function checkPx(){if(S.pxChk)return;S.pxChk=1;S.px='chk';
