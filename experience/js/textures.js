@@ -65,17 +65,32 @@ function canvas(w, h) {
   return [c, c.getContext('2d')];
 }
 
-// 종이결: 아주 옅은 노이즈
+// 종이결: 아주 옅은 노이즈(±3 밝기).
+// 예전에는 표지마다 모든 픽셀을 하나씩 계산해(표지 한 장 78만 픽셀) 휴대폰에서 시작이 몇 초씩 늦었다.
+// 같은 결의 작은 노이즈 타일을 한 번만 만들어 무늬로 깔아 준다(진폭이 1% 남짓이라 반복은 보이지 않는다)
+let grain = null;
+function grainTile() {
+  if (grain) return grain;
+  const S = 256;
+  const [c, x] = canvas(S, S);
+  const img = x.createImageData(S, S);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 6;          // 예전과 같은 세기
+    const v = n > 0 ? 255 : 0;                     // 밝게(흰색) 또는 어둡게(검정)를 그만큼의 투명도로 얹는다
+    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = Math.abs(n);
+  }
+  x.putImageData(img, 0, 0);
+  grain = c;
+  return grain;
+}
 function paper(ctx, w, h, base) {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, w, h);
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const n = (Math.random() - 0.5) * 6;
-    d[i] += n; d[i + 1] += n; d[i + 2] += n;
-  }
-  ctx.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.fillStyle = ctx.createPattern(grainTile(), 'repeat');
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
 }
 
 /* ---------- 문 ---------- */
@@ -184,7 +199,13 @@ function shade(hex, amt) {
   return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 
+// 같은 책은 책장과 큐레이션 테이블에 두 번 놓이므로 표지는 한 번만 그려 함께 쓴다
+const coverCache = new Map();
 export function bookCover(book) {
+  if (!coverCache.has(book.id)) coverCache.set(book.id, drawBookCover(book));
+  return coverCache.get(book.id);
+}
+function drawBookCover(book) {
   const W = 740, H = 1050;
   const [c, x] = canvas(W, H);
   paper(x, W, H, book.color);

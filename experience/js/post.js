@@ -47,18 +47,19 @@ export const QUALITY = [
 // 마무리의 비네트는 CSS로 대신하고(.lite-vignette), 색 보정·그레인은 2~3% 수준이라 생략한다.
 //   scale = 기준 해상도 대비 배율. 0단계는 여유 있는 기기(아이패드 등)만 올라간다
 export const LITE = [
-  { scale: 1.25, shadow: 3 },
+  { scale: 1.15, shadow: 3 },
   { scale: 1.0, shadow: 3 },
-  { scale: 0.86, shadow: 4 },
-  { scale: 0.74, shadow: 4 },
-  { scale: 0.62, shadow: 6 },
+  { scale: 0.88, shadow: 4 },
+  { scale: 0.78, shadow: 4 },
+  { scale: 0.68, shadow: 6 },
 ];
 
 function createLite(renderer, scene, camera, overlay) {
-  // 기준: 화면 밀도 1.5배까지, 전체 픽셀 160만 개 안에서(휴대폰 ≈ 1.5배, 아이패드 ≈ 1.1배)
-  const base = () => Math.min(devicePixelRatio, 1.5, Math.sqrt(1.6e6 / (innerWidth * innerHeight)));
+  // 기준: 화면 밀도 1.75배까지, 전체 픽셀 160만 개 안에서(휴대폰 ≈ 1.75배, 아이패드 ≈ 1.1배)
+  // 가장 낮은 단계에서도 화면 밀도 1배 아래로는 내리지 않는다(그 아래는 글자·가장자리가 눈에 띄게 뭉개진다)
+  const base = () => Math.min(devicePixelRatio, 1.75, Math.sqrt(1.6e6 / (innerWidth * innerHeight)));
   let level = 1;
-  const ratio = () => Math.max(0.75, Math.min(devicePixelRatio, 2, base() * LITE[level].scale));
+  const ratio = () => Math.max(Math.min(1, devicePixelRatio), Math.min(devicePixelRatio, 2, base() * LITE[level].scale));
   function applyLevel() {
     renderer.setPixelRatio(ratio());
     renderer.setSize(innerWidth, innerHeight);

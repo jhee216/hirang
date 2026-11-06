@@ -1140,7 +1140,9 @@ const clock = new THREE.Clock();
 // 데스크톱은 60FPS 가까이(55 미만이 2초 이어지면 한 단계 ↓), 휴대폰·아이패드는 30FPS 이상(30 미만이 2초면 ↓).
 // 되돌린 뒤 곧바로 다시 느려지면 그 단계를 상한으로 삼아 오르내림을 반복하지 않는다.
 let revealed = false;   // 로더가 걷힌 뒤부터 FPS를 판단한다
-const perf = { target: coarse ? 30 : 55, up: coarse ? 52 : 58.5, acc: 0, n: 0, slow: 0, fast: 0, last: performance.now(), fps: 0, ceiling: 0, raisedAt: -1e9, log: [] };
+// up: 이만큼 여유가 있으면 한 단계 선명하게. 휴대폰은 60Hz에서 52fps를 5초 넘기기 어려워 한번 흐려지면 돌아오지 않던 문제가 있어 45로 낮춘다
+// graceUntil: 처음 화면이 뜬 직후·조명 구역이 바뀐 직후는 원래 잠깐 느리므로 그동안은 품질을 판단하지 않는다(괜히 흐려지지 않게)
+const perf = { target: coarse ? 30 : 55, up: coarse ? 45 : 58.5, graceUntil: 0, acc: 0, n: 0, slow: 0, fast: 0, last: performance.now(), fps: 0, ceiling: 0, raisedAt: -1e9, log: [] };
 function govern(now) {
   const ms = now - perf.last; perf.last = now;
   // 탭 전환·멈춤(1초 이상)만 계산에서 뺀다. 느린 기기의 긴 프레임(0.25초 등)은 그대로 세야 품질을 내릴 수 있다
@@ -1150,6 +1152,7 @@ function govern(now) {
   const fps = (1000 * perf.n) / perf.acc;
   perf.fps = Math.round(fps); perf.acc = perf.n = 0;
   if (!revealed) return;
+  if (now < perf.graceUntil) { perf.slow = perf.fast = 0; return; }
   if (fps < perf.target) {
     perf.fast = 0;
     // 목표의 절반도 안 되면 기다리지 않고 바로 두 단계를 내린다(휴대폰에서 몇 초씩 버벅이지 않게)
@@ -1161,7 +1164,7 @@ function govern(now) {
     }
   } else if (fps > perf.up) {
     perf.slow = 0;
-    if (++perf.fast >= 5 && post.level > perf.ceiling) {
+    if (++perf.fast >= 4 && post.level > perf.ceiling) {
       perf.fast = 0;
       if (post.setLevel(post.level - 1)) { perf.raisedAt = now; perf.log.push(`↑${post.level} @${perf.fps}fps`); }
     }
@@ -1231,6 +1234,7 @@ function setZone(out, inn) {
   const key = `${+out}${+inn}`;
   if (key === zoneKey) return;
   zoneKey = key;
+  perf.graceUntil = performance.now() + 2500;
   for (const l of outsideLights) l.visible = out;
   for (const l of insideLights) l.visible = inn;
 }
@@ -1278,6 +1282,7 @@ updateZone();
 
 function reveal() {
   if (revealed) return; revealed = true;
+  perf.graceUntil = performance.now() + 3000;
   ui.loader.classList.add('done');
   if (!returning) setTimeout(() => ui.doorHint.classList.add('show'), reduced ? 200 : 1400);
 }

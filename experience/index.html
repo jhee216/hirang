@@ -10,13 +10,35 @@
 <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/experience.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
 } }
 </script>
+<!-- 3D 엔진 파일을 처음부터 한꺼번에 받는다(import map 뒤에 있어야 "three" 이름을 찾는다)(하나 받고 그 안의 import를 보고 또 받는 대기 줄을 없앤다) -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/environments/RoomEnvironment.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/EffectComposer.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/Pass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/MaskPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/ShaderPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/RenderPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/GTAOPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/BokehPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/OutputPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/postprocessing/SMAAPass.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/CopyShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/GTAOShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/PoissonDenoiseShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/BokehShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/LuminosityHighPassShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/OutputShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/shaders/SMAAShader.js">
+<link rel="modulepreload" crossorigin href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/math/SimplexNoise.js">
 </head>
 <body>
 <div id="app" data-state="INITIAL">
