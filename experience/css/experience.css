@@ -18,6 +18,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 #scene{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
 #app[data-state="ROOM_EXPLORATION"] #scene{cursor:grab}
 #app.dragging #scene{cursor:grabbing!important}
+/* 휴대폰 경로(후처리 없음)에서 마무리 셰이더의 가장자리 어둡게를 대신한다 */
+.lite-vignette{display:none;position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 78% 74% at 50% 50%,transparent 38%,rgba(0,0,0,.085) 100%)}
+#app.lite .lite-vignette{display:block}
 
 /* 상단: 기존 사이트의 로고 높이 34px · 가장자리 24px */
 .top{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;padding:20px var(--e);pointer-events:none;z-index:5}

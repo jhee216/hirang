@@ -41,7 +41,59 @@ export const QUALITY = [
   { scale: 0.62, shadow: 4, ao: false },
 ];
 
-export function createPost(renderer, scene, camera, { high, overlay }) {
+// 휴대폰·태블릿용 가벼운 경로: 후처리 버퍼 없이 화면에 바로 그린다.
+// 모바일 GPU는 전체 화면을 여러 번 오가는 비용(빛 번짐 밉 체인·SMAA 3단계·마무리)이 가장 비싸고,
+// 화면 버퍼의 기본 MSAA는 타일 GPU에서 거의 공짜라 가장자리는 오히려 더 매끈하다.
+// 마무리의 비네트는 CSS로 대신하고(.lite-vignette), 색 보정·그레인은 2~3% 수준이라 생략한다.
+//   scale = 기준 해상도 대비 배율. 0단계는 여유 있는 기기(아이패드 등)만 올라간다
+export const LITE = [
+  { scale: 1.25, shadow: 3 },
+  { scale: 1.0, shadow: 3 },
+  { scale: 0.86, shadow: 4 },
+  { scale: 0.74, shadow: 4 },
+  { scale: 0.62, shadow: 6 },
+];
+
+function createLite(renderer, scene, camera, overlay) {
+  // 기준: 화면 밀도 1.5배까지, 전체 픽셀 160만 개 안에서(휴대폰 ≈ 1.5배, 아이패드 ≈ 1.1배)
+  const base = () => Math.min(devicePixelRatio, 1.5, Math.sqrt(1.6e6 / (innerWidth * innerHeight)));
+  let level = 1;
+  const ratio = () => Math.max(0.75, Math.min(devicePixelRatio, 2, base() * LITE[level].scale));
+  function applyLevel() {
+    renderer.setPixelRatio(ratio());
+    renderer.setSize(innerWidth, innerHeight);
+  }
+  applyLevel();
+  return {
+    lite: true, composer: null, ao: null, bokeh: null,
+    get level() { return level; },
+    get levels() { return LITE.length; },
+    get shadowEvery() { return LITE[level].shadow; },
+    setLevel(i) {
+      const n = Math.max(0, Math.min(LITE.length - 1, i));
+      if (n === level) return false;
+      level = n; applyLevel();
+      return true;
+    },
+    pixelRatio: () => ratio(),
+    setFocus() {}, setAperture() {}, setReading() {}, setGlow() {},
+    resize() { applyLevel(); },
+    render() {
+      renderer.setRenderTarget(null);
+      renderer.autoClear = true;
+      renderer.render(scene, camera);
+      if (overlay) {
+        renderer.autoClear = false;
+        renderer.clearDepth();
+        renderer.render(overlay, camera);
+        renderer.autoClear = true;
+      }
+    },
+  };
+}
+
+export function createPost(renderer, scene, camera, { high, overlay, lite }) {
+  if (lite) return createLite(renderer, scene, camera, overlay);
   // 후처리를 거치면 renderer의 antialias가 무시되어 가장자리가 계단처럼 깨진다.
   // 버퍼 MSAA는 모든 패스마다 비용이 반복돼 버벅이므로, 마지막에 한 번만 SMAA로 가장자리를 다듬는다.
   const composer = new EffectComposer(renderer);
@@ -91,8 +143,9 @@ export function createPost(renderer, scene, camera, { high, overlay }) {
   let focus = 5;
   let reading = false;
   return {
-    composer, ao, bokeh,
+    lite: false, composer, ao, bokeh,
     get level() { return level; },
+    get levels() { return QUALITY.length; },
     get shadowEvery() { return QUALITY[level].shadow; },
     // 품질 단계 바꾸기(0 = 최고). 프레임이 모자라면 main.js가 한 단계씩 내린다
     setLevel(i) {

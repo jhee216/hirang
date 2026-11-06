@@ -25,6 +25,8 @@ const ui = {
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarse = matchMedia('(pointer: coarse)').matches;
+// 휴대폰·태블릿은 후처리 없이 화면에 바로 그리는 가벼운 경로(post.js LITE). ?full 을 붙이면 데스크톱 경로로 확인할 수 있다
+const lite = coarse && !new URLSearchParams(location.search).has('full');
 
 /* ---------- WebGL 지원 확인 → 미지원이면 대체 UI ---------- */
 function webglOK() {
@@ -148,7 +150,8 @@ inspectLight.target.position.set(0, 0, -1);
 camera.add(inspectLight, inspectLight.target);
 // 호버한 오브젝트 위로 다가가는 작은 빛
 const hoverLight = new THREE.PointLight('#FFF6E6', 0, 1.6, 1.4);
-scene.add(hoverLight);
+// 터치 기기에는 마우스를 올려 두는 동작이 없어 이 빛이 거의 켜지지 않는다. 꺼진 조명도 모든 픽셀에서 계산되므로 휴대폰 경로에서는 빼 둔다
+if (!lite) scene.add(hoverLight);
 
 // 고른 책·패키지는 별도 층(overlay)에 그린다: 늘 앞에 보이고(선반 뒤로 숨지 않음) 심도 흐림도 받지 않는다
 const overlay = new THREE.Scene();
@@ -1038,7 +1041,8 @@ addEventListener('resize', () => {
 });
 
 /* ---------- 후처리 · 초점 ---------- */
-const post = createPost(renderer, scene, camera, { high: !coarse, overlay });
+const post = createPost(renderer, scene, camera, { high: !coarse, overlay, lite });
+ui.app.classList.toggle('lite', lite);
 const focusRay = new THREE.Raycaster();
 const _fp = new THREE.Vector3();
 let focusTick = 0, focusDist = 5.4;
@@ -1139,7 +1143,8 @@ let revealed = false;   // 로더가 걷힌 뒤부터 FPS를 판단한다
 const perf = { target: coarse ? 30 : 55, up: coarse ? 52 : 58.5, acc: 0, n: 0, slow: 0, fast: 0, last: performance.now(), fps: 0, ceiling: 0, raisedAt: -1e9, log: [] };
 function govern(now) {
   const ms = now - perf.last; perf.last = now;
-  if (ms > 250 || document.hidden) { perf.acc = perf.n = 0; return; }   // 탭 전환·멈춤은 계산에서 뺀다
+  // 탭 전환·멈춤(1초 이상)만 계산에서 뺀다. 느린 기기의 긴 프레임(0.25초 등)은 그대로 세야 품질을 내릴 수 있다
+  if (ms > 1000 || document.hidden) { perf.acc = perf.n = 0; return; }
   perf.acc += ms; perf.n++;
   if (perf.acc < 1000) return;
   const fps = (1000 * perf.n) / perf.acc;
@@ -1147,10 +1152,12 @@ function govern(now) {
   if (!revealed) return;
   if (fps < perf.target) {
     perf.fast = 0;
-    if (++perf.slow >= 2) {
+    // 목표의 절반도 안 되면 기다리지 않고 바로 두 단계를 내린다(휴대폰에서 몇 초씩 버벅이지 않게)
+    const severe = fps < perf.target * 0.5;
+    if (severe || ++perf.slow >= 2) {
       perf.slow = 0;
       if (now - perf.raisedAt < 8000) perf.ceiling = post.level + 1;     // 올렸더니 곧 느려짐 → 그 아래가 이 기기의 한계
-      if (post.setLevel(post.level + 1)) perf.log.push(`↓${post.level} @${perf.fps}fps`);
+      if (post.setLevel(post.level + (severe ? 2 : 1))) perf.log.push(`↓${post.level} @${perf.fps}fps`);
     }
   } else if (fps > perf.up) {
     perf.slow = 0;
@@ -1238,7 +1245,7 @@ function updateZone() {
 // 실제 화면은 후처리 버퍼(선형 색·톤매핑 없음)에 그리므로, 같은 버퍼를 대상으로 준비해야 같은 프로그램이 만들어진다.
 const hiddenForWarm = [];
 scene.traverse((o) => { if (!o.visible && !o.isLight) { hiddenForWarm.push(o); o.visible = true; } });
-const toBuffer = () => renderer.setRenderTarget(post.composer.renderTarget1);   // 기다리는 사이 다른 프레임이 바꿔 놓을 수 있어 매번 지정
+const toBuffer = () => renderer.setRenderTarget(post.lite ? null : post.composer.renderTarget1);   // 기다리는 사이 다른 프레임이 바꿔 놓을 수 있어 매번 지정
 for (const [o, i] of [[true, true], [false, true], [true, false]]) {
   setZone(o, i);
   toBuffer();
