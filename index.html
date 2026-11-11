@@ -1056,7 +1056,7 @@ h1,p{margin:0}
 .h2-menu a{color:#716C60;transition:color .2s}
 .h2-menu a.on{color:var(--ink)}
 /* 2026-11-11 방명록: 위 네 항목과 떨어뜨려 아래에 따로 둔다 */
-.h2-menu .h2-gb{margin-top:26px}
+.h2-menu .h2-gb{margin-top:12px}
 /* 휴대폰 세로: 목록이 한 줄 길어진 만큼 사진 묶음을 그 아래에서 시작한다(--menu-h는 원래 비어 있어 140px로 계산되던 값) */
 @media (max-width:900px){.home.hm2 .h2-menu .h2-gb{margin-top:14px}}
 @media (max-width:900px) and (orientation:portrait){#home.home.hm2 .h2-photos{--menu-h:206px}}
@@ -3076,6 +3076,9 @@ html.hl-locked .hl-glogo{visibility:hidden}
 /* 2026-11-11: 3D에서 온 책 페이지의 '‹ 시크릿 룸으로' 버튼이 공용 고정 로고(#hlGlogo) 자리와 겹쳐 로고가 뭉개져 보였다 → 버튼을 오른쪽 끝으로 */
 .bp-brand{flex-direction:row!important;justify-content:flex-end!important}
 .bp-brand .logo{position:absolute!important;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}
+
+/* 2026-11-11 슬로건 크기 90% — 이 판은 모든 화면에서 --f로 크기를 정하므로 글자만 0.9배(자리·간격 계산은 그대로) */
+#home.home.hm2 .h2-big.h2-ko{font-size:calc(var(--f, clamp(44px,5.6vw,100px)) * .9)}
 </style></head>
 <body>
 <div class="screen pre">
