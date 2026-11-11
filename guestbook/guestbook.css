@@ -1,0 +1,175 @@
+/* HIRANG GUESTBOOK — THE SECRET ARCHIVE
+   3D 독서구역(아치·셸프·패키지)과 다른 공간: 아이보리 종이의 책상 위, 가운데 '한 장의 페이지'와 오른쪽에 쌓여 가는 보관함.
+   뒤 벽에는 하이랑 심볼 종이 조각이 익명의 흔적으로 모인다. 토큰은 웹사이트(index.html :root)와 같다. */
+:root{
+  --ink:#0C0C0C;--moss:#4F5F4C;--ivory:#FFF9EA;--lav:#C1B1D1;--muted:#716C60;--soft:#55524A;
+  --paper:#FFFDF7;--paper-edge:#EFE6D2;--rule:rgba(79,95,76,.13);--line:rgba(79,95,76,.24);
+  --sans:"Pretendard","Inter","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --hl-t:24px;--hl-l:32px;--hl-h:34px;          /* 공용 로고(원본 920×297) */
+  --sheet-w:min(468px,calc(100vw - 32px));
+}
+@media (max-width:900px){:root{--hl-t:15px;--hl-l:18px;--hl-h:26px}}
+*{box-sizing:border-box;word-break:keep-all}
+html,body{margin:0;min-height:100%;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+/* 공간: 위는 밝은 벽, 아래로 갈수록 종이 책상의 따뜻한 면 — 은은한 깊이 */
+body{background:
+  radial-gradient(ellipse 70% 55% at 50% 42%,#FFFCF2 0%,rgba(255,252,242,0) 70%),
+  linear-gradient(180deg,#FFF9EA 0%,#FBF3E0 62%,#F4EAD3 100%);background-attachment:fixed}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--moss);outline-offset:3px}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.hl-glogo{position:fixed;top:var(--hl-t);left:var(--hl-l);height:var(--hl-h);width:calc(var(--hl-h) * 920 / 297);z-index:20;display:block;line-height:0}
+.hl-glogo img{display:block;width:100%;height:100%}
+.gb-top{position:fixed;top:var(--hl-t);right:var(--hl-l);height:var(--hl-h);display:flex;align-items:center;gap:22px;z-index:20;font:500 13px "Inter",var(--sans);letter-spacing:.02em;color:var(--soft)}
+.gb-top a{padding:6px 0;border-bottom:1px solid transparent;transition:color .2s,border-color .2s}
+.gb-top a:hover{color:var(--moss)}
+.gb-top a[aria-current="page"]{color:var(--moss);border-bottom-color:var(--moss);letter-spacing:.14em;font-weight:600}
+
+/* ---------- 공간 ---------- */
+.archive-room{position:relative;min-height:100dvh;padding:calc(var(--hl-t) + var(--hl-h) + 26px) 24px 48px;display:flex;flex-direction:column;align-items:center;overflow:clip}   /* clip: 스크롤 상자가 되지 않고(포커스 때 밀려 올라가던 문제), 뒤 흔적 그림이 문서를 늘리지 않는다 */
+.traces{position:absolute;left:50%;top:calc(50% + 34px);width:min(1100px,150vw);height:min(1100px,150vw);transform:translate(-50%,-50%);pointer-events:none;z-index:0}
+.traces .frag{transition:opacity 1.2s var(--ease)}
+.traces .frag.new{animation:fragIn 2.4s var(--ease)}
+@keyframes fragIn{0%{opacity:0;transform:scale(.4)}40%{opacity:1}100%{opacity:1;transform:none}}
+.label{position:relative;z-index:1;display:flex;align-items:center;gap:14px;margin:0 0 22px;font:600 10.5px "Inter",sans-serif;letter-spacing:.38em;color:var(--moss)}
+.label i{display:block;width:28px;height:1px;background:var(--line)}
+.label span:last-child{color:var(--muted);font-weight:500}
+
+.preview-note{position:relative;z-index:1;margin:-12px 0 16px;padding:4px 12px;border:1px solid rgba(79,95,76,.22);border-radius:999px;font-size:11.5px;color:var(--soft);background:rgba(255,253,247,.7)}
+.desk{position:relative;z-index:1;display:grid;grid-template-columns:var(--sheet-w);align-items:end;justify-content:center}
+
+/* ---------- 종이 병풍: 공간의 건축(가운데 판 + 양쪽으로 접혀 들어간 판 + 바닥 그림자) ---------- */
+.screen{position:absolute;left:50%;top:calc(var(--hl-t) + var(--hl-h) + 54px);width:min(1180px,96vw);height:min(560px,calc(100dvh - 180px));transform:translateX(-50%);perspective:950px;perspective-origin:50% 40%;z-index:0;pointer-events:none}
+.panel{position:absolute;top:0;height:100%;
+  background:linear-gradient(180deg,#FFFCF3 0%,#FBF4E2 70%,#F5ECD6 100%);
+  box-shadow:0 0 0 1px rgba(79,95,76,.05) inset,0 30px 60px -40px rgba(60,52,36,.35)}
+.pc{left:25%;width:50%;background:linear-gradient(180deg,#FFFDF6 0%,#FCF6E6 72%,#F6EDD8 100%)}
+.pc::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--lav);opacity:.55}   /* 위 가장자리의 라벤더 종이 띠 */
+.seam{position:absolute;left:50%;top:0;bottom:0;width:1px;background:linear-gradient(180deg,rgba(79,95,76,.08),rgba(79,95,76,0) 60%)}
+.pl{left:0;width:25.3%;transform-origin:100% 50%;transform:rotateY(48deg);background:linear-gradient(90deg,#EADFC6,#F8F0DD 70%,#FBF5E6)}
+.pr{right:0;width:25.3%;transform-origin:0 50%;transform:rotateY(-48deg);background:linear-gradient(270deg,#E8DCC2,#F7EEDA 70%,#FBF5E6)}
+.pl::after,.pr::after{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--moss);opacity:.12}
+.pl::after{left:0}.pr::after{right:0}
+.floor{position:absolute;left:8%;right:8%;bottom:-26px;height:52px;background:radial-gradient(ellipse 50% 50% at 50% 50%,rgba(60,52,36,.16),rgba(60,52,36,0) 70%)}
+
+/* ---------- 한 장의 페이지 ---------- */
+.sheet-wrap{position:relative;perspective:1600px}
+.under{position:absolute;inset:0;background:var(--paper);border-radius:1px;box-shadow:0 1px 2px rgba(60,52,36,.08)}
+.u1{transform:translate(7px,6px) rotate(1.4deg);background:#FAF4E5}
+.u2{transform:translate(-6px,10px) rotate(-1.1deg);background:#F6EEDB}
+.sheet{position:relative;width:var(--sheet-w);min-height:calc(var(--sheet-w) * 1.3);padding:30px 36px 26px;display:flex;flex-direction:column;
+  background:
+    radial-gradient(ellipse at 20% 0%,rgba(255,255,255,.7),transparent 60%),
+    linear-gradient(180deg,#FFFEF9,var(--paper));
+  border-radius:1px;transform-origin:50% 100%;
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 0 0 1px rgba(79,95,76,.05),0 2px 4px rgba(60,52,36,.06),0 30px 50px -30px rgba(60,52,36,.45);
+  transition:transform .5s var(--ease),opacity .5s var(--ease)}
+.sheet::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--lav);opacity:.75}   /* 라벤더 책등 띠 */
+.sheet.pressed{transform:scale(.988)}
+.sheet.gone{opacity:0;transform:translateY(8px)}
+.sheet.arrive{animation:arrive .7s var(--ease)}
+@keyframes arrive{from{opacity:0;transform:translateY(36px) rotate(-.8deg)}to{opacity:1;transform:none}}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.eyebrow{font:600 10px "Inter",sans-serif;letter-spacing:.34em;color:var(--moss)}
+.mode{display:flex;gap:14px}
+.mode button{border:0;background:none;padding:2px 0 4px;font-size:12.5px;color:var(--muted);border-bottom:1px solid transparent}
+.mode button[aria-selected="true"]{color:var(--ink);font-weight:600;border-bottom-color:var(--moss)}
+
+.write{display:flex;flex-direction:column;flex:1}
+.prompt{display:block;font-size:19px;font-weight:600;letter-spacing:-.02em;color:var(--ink);margin-bottom:10px}
+textarea{display:block;width:100%;resize:none;border:0;outline:0;margin:0;padding:3px 0 0;font:16px/32px var(--sans);color:#23211C;
+  background:repeating-linear-gradient(transparent 0 31px,var(--rule) 31px 32px);background-attachment:local;min-height:160px;flex:1}
+textarea:focus-visible{outline:none;box-shadow:0 1px 0 var(--moss)}
+.write.ink textarea{color:#1A1814;transition:color .2s}
+.count{text-align:right;font:500 11px "Inter",sans-serif;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}
+
+.margin{margin-top:16px;padding-top:14px;border-top:1px solid var(--rule)}
+.row{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;min-height:30px}
+.k{width:34px;font-size:12px;font-weight:600;color:var(--soft)}
+.t{position:relative;cursor:pointer}
+.t input{position:absolute;opacity:0;pointer-events:none}
+.t span{display:inline-block;padding:3px 0;font-size:13.5px;color:var(--muted);border-bottom:1px solid transparent;transition:color .2s,border-color .2s}
+.t input:checked+span{color:var(--ink);font-weight:600;border-bottom-color:var(--moss)}
+.t input:focus-visible+span{outline:2px solid var(--moss);outline-offset:3px}
+.t.chk span::before{content:"";display:inline-block;width:11px;height:11px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line);border-radius:2px;background:var(--paper)}
+.t.chk input:checked+span{border-bottom-color:transparent}
+.t.chk input:checked+span::before{background:var(--moss);border-color:var(--moss);box-shadow:inset 0 0 0 2px var(--paper)}
+#name{flex:1;min-width:120px;border:0;border-bottom:1px solid var(--line);background:transparent;padding:4px 0;font:14px var(--sans);outline:0}
+#name:focus{border-bottom-color:var(--moss)}
+.hint{margin:2px 0 0 50px;font-size:12px;color:var(--muted)}
+.trap{position:absolute!important;left:-9999px;width:1px;height:1px;opacity:0}
+.err{margin:10px 0 0;font-size:13px;color:#9A4B3C}
+.err:empty{display:none}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
+.fine{font-size:11.5px;color:var(--muted)}
+#submit{border:0;border-radius:1px;background:var(--moss);color:var(--ivory);font-weight:600;font-size:13.5px;padding:11px 20px;letter-spacing:.01em}
+#submit:disabled{opacity:.55;cursor:default}
+
+/* 읽기 */
+.read{flex:1;display:flex;flex-direction:column;perspective:1200px}
+.leaf{flex:1;display:flex;flex-direction:column;transform-origin:0 50%}
+.leaf-body{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:32px;color:#23211C;
+  background:repeating-linear-gradient(transparent 0 31px,var(--rule) 31px 32px);flex:1;min-height:260px}
+.leaf-name{margin:16px 0 0;text-align:right;font-size:13.5px;font-weight:600;color:var(--moss)}
+.leaf-name:empty{display:none}
+.leaf.out-n{animation:outN .3s var(--ease) forwards}.leaf.in-n{animation:inN .45s var(--ease)}
+.leaf.out-p{animation:outP .3s var(--ease) forwards}.leaf.in-p{animation:inP .45s var(--ease)}
+@keyframes outN{to{transform:rotateY(-28deg) translateX(-12px);opacity:0}}
+@keyframes inN{from{transform:rotateY(20deg) translateX(14px);opacity:0}}
+@keyframes outP{to{transform:rotateY(28deg) translateX(12px);opacity:0}}
+@keyframes inP{from{transform:rotateY(-20deg) translateX(-14px);opacity:0}}
+.empty{margin:auto 0;text-align:center;color:var(--muted);font-size:14px}
+.turns{display:flex;justify-content:space-between;margin-top:20px}
+.turn{width:40px;height:40px;border:1px solid var(--line);border-radius:50%;background:transparent;color:var(--moss)}
+.turn:disabled{opacity:.28;cursor:default}
+.offline{margin:auto 0;text-align:center;color:var(--muted);font-size:14px}
+
+/* ---------- 비밀의 보관함: 페이지 오른쪽 아래, 종이가 비스듬히 쌓인 더미 ---------- */
+.archive{position:absolute;left:calc(100% + 56px);bottom:0;width:180px;display:flex;flex-direction:column;align-items:center}
+.stack{position:relative;width:150px;height:200px;perspective:700px}
+.stack .s{position:absolute;left:0;bottom:0;width:150px;height:104px;background:var(--paper);border-radius:1px;
+  transform-origin:50% 100%;box-shadow:0 1px 0 var(--paper-edge),0 6px 10px -8px rgba(60,52,36,.4)}
+.stack .s::after{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--lav);opacity:.6}
+.stack .s.land{animation:land .6s var(--ease)}
+@keyframes land{from{transform:var(--from);opacity:.4}}
+.plinth{width:176px;height:16px;margin-top:-2px;background:linear-gradient(180deg,#F6EEDB,#EBE0C6);box-shadow:0 1px 0 rgba(79,95,76,.12),0 14px 20px -12px rgba(60,52,36,.4);border-top:2px solid rgba(79,95,76,.55)}
+.stack-label{margin-top:14px;font:600 9.5px "Inter",sans-serif;letter-spacing:.42em;color:var(--muted);padding-left:.42em}
+
+/* ---------- 접히는 종이 ---------- */
+.fold{position:fixed;z-index:30;pointer-events:none;transform-style:preserve-3d;perspective:1400px}
+.fold .half{position:absolute;left:0;width:100%;height:50%;overflow:hidden;background:var(--paper);transform-style:preserve-3d;backface-visibility:hidden}
+.fold .top{top:0;box-shadow:0 0 0 1px rgba(79,95,76,.05)}
+.fold .bottom{top:50%;transform-origin:50% 0;z-index:2;overflow:visible}
+.fold .bottom .face{overflow:hidden;height:100%}
+.fold .bottom .back{position:absolute;inset:0;background:linear-gradient(180deg,#F7F0DE,var(--paper));transform:rotateX(180deg);backface-visibility:hidden}
+.fold .bottom .face{backface-visibility:hidden;background:var(--paper)}
+.fold .face{position:absolute;left:0;width:100%;padding:30px 36px 0;font:16px/32px var(--sans);color:#1A1814;white-space:pre-wrap;overflow-wrap:anywhere}
+.fold .face::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--lav);opacity:.75}
+
+/* ---------- 좁은 화면: 보관함은 페이지 위 오른쪽의 작은 더미 ---------- */
+@media (max-width:1060px){
+  /* 보관함은 페이지 위 오른쪽(페이지를 가리지 않게 페이지 윗변에 아래를 맞춘다) */
+  .archive{left:auto;right:0;bottom:100%;width:180px;margin-bottom:4px;transform:scale(.36);transform-origin:100% 100%}
+  .desk{margin-top:84px}
+  .label{width:var(--sheet-w);justify-content:flex-start;margin-bottom:0}
+}
+@media (max-width:860px){
+  .screen{width:120vw;height:62dvh}.pl,.pr{opacity:.6}
+  .gb-top{gap:14px;font-size:12px}
+  .gb-top a:not([aria-current]):not(.back-room){display:none}
+  .archive-room{padding:calc(var(--hl-t) + var(--hl-h) + 18px) 16px 28px}
+  .label{letter-spacing:.3em}
+  .label i,.label span:last-child{display:none}
+  .preview-note{margin:8px 0 0;align-self:flex-start;margin-left:max(0px,calc((100% - var(--sheet-w)) / 2))}
+  .sheet{padding:24px 22px 22px;min-height:0}
+  .prompt{font-size:17px}
+  textarea{min-height:224px}
+  .hint{margin-left:50px}
+  .foot{flex-direction:column-reverse;align-items:stretch;text-align:center}
+  #submit{padding:14px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

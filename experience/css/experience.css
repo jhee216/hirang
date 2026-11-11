@@ -201,10 +201,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .top-l .daymode{align-self:center}
 
 /* 2026-11-11: 세로 화면에서 조명 선택 알약(184px)이 로고 칸(147px)보다 넓어 가운데 정렬 때문에 화면 왼쪽 밖으로 밀렸다 → 로고와 같은 왼쪽 선에 맞춘다 */
-/* 2026-11-11 검수: 로고(26~34px)와 조명 알약(34px)의 가운데선을 맞춘다. 로고는 공용 좌표에 고정이므로 알약을 로고 높이 차의 절반만큼 올린다
-   (전에는 900px 이하에서 알약이 위에 붙어 로고·오른쪽 버튼보다 4px 아래로 처졌다). 로고 아래로 쌓이는 640px 이하는 왼쪽 위 정렬 */
-.top-l .daymode{align-self:flex-start;margin-top:calc((var(--hl-h) - 34px) / 2)}
-@media (max-width:640px){.top-l .daymode{margin-top:0}}
+@media (max-width:900px){.top-l .daymode{align-self:flex-start}}
 
 /* 2026-11-11: 패키지 '열기' ↔ '다시 닫기'(책 '책 닫기' ↔ '다시 펼치기')는 같은 자리·같은 너비 — 글자만 바뀌고 줄바꿈·위치는 그대로 */
 #rClose,#rOpen{min-width:7.2em;text-align:center;justify-content:center}
@@ -224,11 +221,3 @@ button{font:inherit;color:inherit;cursor:pointer}
 .reader.large~.r-x:hover{background:var(--moss);color:var(--ivory)}
 @media (min-width:900px){.reader.large~.r-x{font-size:16px}}
 .reader.large+.r-text{padding-right:calc(clamp(20px,4vw,44px) + 1.6em)}
-
-/* 2026-11-11 검수
-   · 오른쪽 여백을 로고의 왼쪽 여백과 같게(데스크톱 32px · 900px 이하 18px). 전에는 왼쪽 32 · 오른쪽 24로 좌우가 달랐다
-   · 641~760px에서는 한 줄에 다 들어가지 않아 조명 알약이 BGM 버튼과 겹쳤다 → 이 폭부터 음량 막대를 숨긴다(640px 이하와 같다) */
-.top{padding-right:var(--hl-l)}
-@media (max-width:760px){.bgm-vol{display:none!important}}
-/* 2026-11-11 검수: 본문 창(<p>)의 기본 바깥 여백 16px 때문에 창이 계산한 자리보다 16px 아래로 밀려 조작 패널을 덮었다 */
-.r-text{margin:0}

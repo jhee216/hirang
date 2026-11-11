@@ -165,10 +165,17 @@ function route(from, to) {
 const V = (n) => new THREE.Vector3(n[0], n[2] || 0, n[1]);
 const rand = (a, b) => a + Math.random() * (b - a);
 
+// 2026-11-11 라이브: 장식용으로 지어낸 관람객을 없애고, 지금 실제로 접속한 다른 방문자만 그린다(최대 5명).
+// 서버가 주는 값은 '나에게만 의미 있는' 무작위 토큰뿐 → 이름·계정·세션 식별자를 알 수 없다.
+// 같은 토큰은 같은 모습(접속이 이어지는 동안 같은 캐릭터)으로 그린다. 아무도 없으면 아무도 그리지 않는다.
+const MAX = 5;
+const tokenHash = (s) => { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+
 export function buildPeople(group) {
   const people = [];
   const taken = new Set();
-  let active = false, spawnT = 4, cap = 3;
+  let active = false, visible = true;
+  let want = [];              // 서버가 알려 준 지금 접속 중인 다른 방문자(토큰)
 
   function pose(p, kind) {
     if (kind === 'read') { p.arms.forEach((a, i) => { a.rotation.x = -1.0; a.rotation.z = (i ? -1 : 1) * 0.3; }); p.head.rotation.x = 0.15; }
@@ -179,111 +186,129 @@ export function buildPeople(group) {
     const free = SPOTS.map((sp, i) => i).filter((i) => !taken.has(i));
     return free.length ? free[Math.floor(Math.random() * free.length)] : -1;
   }
-  // 경로 지정: 지금 노드에서 목표 노드까지 통로를 따라, 마지막에 자리로
   function goTo(p, node, final) {
     const path = route(p.node, node).slice(1).map((n) => V(NODES[n]));
     if (final) path.push(final);
     p.path = path; p.dest = node; p.mode = 'walk'; pose(p, 'walk');
   }
-  // 2.0 최종(3차): 원래(1.x)처럼 몇 곳을 둘러본 뒤(visits) 나간다. 빈자리 중 하나로 통로를 따라 걸어간다
+  // 접속이 이어지는 동안은 나가지 않고 빈자리를 옮겨 다니며 구경한다. 접속이 끝나면(leaving) 출구로 걸어 나간다
   function nextAction(p) {
     if (p.spot >= 0) { taken.delete(p.spot); p.spot = -1; }
-    const leave = () => { const ex = EXITS[Math.floor(Math.random() * EXITS.length)]; goTo(p, ex); p.leaving = true; };
-    if (p.visits <= 0 || !active) { leave(); return; }
+    if (p.leaving) { goTo(p, p.exit); return; }
     const i = freeSpot();
-    if (i < 0) { leave(); return; }
+    if (i < 0) { p.mode = 'stay'; p.wait = rand(4, 8); return; }
     const sp = SPOTS[i];
-    taken.add(i); p.spot = i; p.visits--;
+    taken.add(i); p.spot = i;
     goTo(p, sp[0], new THREE.Vector3(sp[1], 0, sp[2]));
   }
-  function spawn(look, at) {
-    const f = figure(look);
+  function pickLook(token) {
+    const used = new Set(people.filter((p) => !p.leaving).map((p) => p.lookIdx));
+    let k = tokenHash(token) % LOOKS.length;
+    for (let n = 0; n < LOOKS.length && used.has(k); n++) k = (k + 1) % LOOKS.length;
+    return k;
+  }
+  function spawn(token, inside) {
+    const lookIdx = pickLook(token);
+    const f = figure(LOOKS[lookIdx]);
+    f.root.visible = visible;
     group.add(f.root);
-    const p = { ...f, look, node: 'OUT', path: [], mode: 'walk', spot: -1, visits: 2 + Math.floor(Math.random() * 3), leaving: false, wait: 0, ph: Math.random() * 10 };
-    if (at != null) {
-      // 처음부터 안에 있는 사람: 자리에서 구경 중
+    const exit = EXITS[tokenHash(token + 'x') % EXITS.length];
+    const p = { ...f, token, lookIdx, exit, node: exit, path: [], mode: 'walk', spot: -1, leaving: false, wait: 0, ph: Math.random() * 10 };
+    const at = inside ? freeSpot() : -1;
+    if (at >= 0) {
+      // 내가 들어오기 전부터 있던 방문자: 자리에서 구경 중
       const sp = SPOTS[at]; taken.add(at); p.spot = at; p.node = sp[0];
       f.root.position.set(sp[1], 0, sp[2]);
       f.root.rotation.y = Math.atan2(sp[3] - sp[1], sp[4] - sp[2]);
-      p.mode = 'stay'; p.wait = rand(2, 9); pose(p, sp[5]);
+      p.mode = 'stay'; p.wait = rand(4, 12); pose(p, sp[5]);
     } else {
-      const from = EXITS[Math.floor(Math.random() * EXITS.length)];
-      p.node = from;
-      f.root.position.copy(V(NODES[from]));
-      f.root.rotation.y = from === 'DOOR' ? Math.PI : -Math.PI / 2;   // 정문에서는 방 안(−z), 아치 문에서는 방 쪽(−x)을 보며 들어온다
+      // 내가 안에 있는 동안 새로 들어온 방문자: 문으로 걸어 들어온다
+      f.root.position.copy(V(NODES[exit]));
+      f.root.rotation.y = exit === 'DOOR' ? Math.PI : -Math.PI / 2;
       nextAction(p);
     }
     people.push(p);
   }
-  // 처음 안에 있는 두 명(왼쪽 테이블·뒷벽 큐레이션). 나머지는 계단 위 아치 문으로 드나든다
-  [0, 1].forEach((k, i) => spawn(LOOKS[k], [0, 6][i]));
-
   function remove(p) {
     group.remove(p.root);
+    p.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
     if (p.spot >= 0) taken.delete(p.spot);
     people.splice(people.indexOf(p), 1);
+  }
+  // 원하는 집합(want)과 그려진 사람을 맞춘다
+  function reconcile() {
+    const wantSet = new Set(want);
+    for (const p of [...people]) {
+      if (wantSet.has(p.token) || p.leaving) continue;
+      if (!active || !visible) { remove(p); continue; }   // 보이지 않을 때는 바로 지운다
+      p.leaving = true;
+      if (p.mode === 'stay') nextAction(p);
+      else { // 걷던 길을 멈추고 출구로
+        p.path = []; p.dest = null; p.node = nearestNode(p.root.position); goTo(p, p.exit);
+      }
+    }
+    for (const tok of want) {
+      if (people.some((p) => p.token === tok && !p.leaving)) continue;
+      const back = people.find((p) => p.token === tok && p.leaving);
+      if (back) { back.leaving = false; nextAction(back); continue; }   // 잠깐 끊겼다 다시 이어진 방문자
+      if (people.filter((p) => !p.leaving).length >= MAX) break;
+      spawn(tok, !active);
+    }
+  }
+  function nearestNode(pos) {
+    let best = null, bd = Infinity;
+    for (const [k, n] of Object.entries(NODES)) { const d = Math.hypot(n[0] - pos.x, n[1] - pos.z); if (d < bd) { bd = d; best = k; } }
+    return best;
   }
 
   return {
     obstacles: [],
-    // 플레이어가 안에 들어온 동안에만 드나든다(문이 열려 있을 때)
-    setActive(on) { active = on; },
-    setVisible(v) { for (const p of people) p.root.visible = v; },
-    count: () => people.length,
-    debug: () => ({ active, cap, spawnT, people: people.map((p) => ({ mode: p.mode, wait: +p.wait.toFixed(1), node: p.node, dest: p.dest, spot: p.spot, path: p.path.length, leaving: p.leaving })) }),
+    setActive(on) { if (active !== on) { active = on; } },
+    setVisible(v) { visible = v; for (const p of people) p.root.visible = v; },
+    // 서버에서 받은 다른 방문자 토큰 목록(최대 5)
+    setFigures(tokens) { want = (tokens || []).slice(0, MAX); reconcile(); },
+    count: () => people.filter((p) => !p.leaving).length,
+    debug: () => ({ active, want: want.length, people: people.map((p) => ({ look: p.lookIdx, mode: p.mode, node: p.node, dest: p.dest, spot: p.spot, leaving: p.leaving, x: +p.root.position.x.toFixed(2), z: +p.root.position.z.toFixed(2) })) }),
     update(t, dt, still) {
-      if (still) return;
-      // 드나들기: 가끔 새 관람객이 문으로 들어온다. 머무는 인원 상한도 천천히 바뀐다
-      if (active && ENTER_FROM_DOOR) {
-        spawnT -= dt;
-        if (spawnT <= 0) {
-          spawnT = rand(7, 14);
-          if (Math.random() < 0.3) cap = 2 + Math.floor(Math.random() * 3);   // 2~4명(성능·혼잡)
-          const inside = people.filter((p) => !p.leaving).length;
-          if (inside < cap) {
-            const used = new Set(people.map((p) => p.look));
-            const pool = LOOKS.filter((l) => !used.has(l));
-            if (pool.length) spawn(pool[Math.floor(Math.random() * pool.length)]);
-          }
-        }
-      }
       for (const p of [...people]) {
         if (p.mode === 'stay') {
           p.wait -= dt;
-          p.body.position.y = Math.abs(Math.sin(t * 1.4 + p.ph)) * 0.008;
-          p.head.rotation.y = Math.sin(t * 0.3 + p.ph) * 0.35;
+          if (!still) {
+            p.body.position.y = Math.abs(Math.sin(t * 1.4 + p.ph)) * 0.008;
+            p.head.rotation.y = Math.sin(t * 0.3 + p.ph) * 0.35;
+          }
           p.legs.forEach((l) => { l.rotation.x *= 0.85; });
-          if (p.wait <= 0 && active) nextAction(p);
+          if (p.wait <= 0 && (active || p.leaving)) nextAction(p);
           continue;
         }
-        // 걷기
         const tgt = p.path[0];
         if (!tgt) {
-          if (p.leaving && EXITS.includes(p.dest)) { remove(p); continue; }
-          p.node = p.dest;
+          if (p.leaving && p.dest === p.exit) { remove(p); continue; }
+          p.node = p.dest || p.node;
           const sp = SPOTS[p.spot];
           if (sp) {
-            p.mode = 'stay'; p.wait = rand(5, 11); pose(p, sp[5]);
-            const want = Math.atan2(sp[3] - sp[1], sp[4] - sp[2]);
-            p.turnTo = want;
+            p.mode = 'stay'; p.wait = rand(6, 14); pose(p, sp[5]);
+            p.turnTo = Math.atan2(sp[3] - sp[1], sp[4] - sp[2]);
           } else { p.mode = 'stay'; p.wait = 1; }
           continue;
         }
         const pos = p.root.position;
         const dx = tgt.x - pos.x, dz = tgt.z - pos.z, d = Math.hypot(dx, dz);
         if (d < 0.03) { pos.y = tgt.y; p.path.shift(); continue; }
+        // 움직임 줄이기 설정이면 걸음 흔들림 없이 미끄러지듯 이동만
         const step = Math.min(d, 0.42 * dt);
         pos.x += dx / d * step; pos.z += dz / d * step;
-        pos.y += (tgt.y - pos.y) * (step / d);   // 계단: 높이도 같은 비율로
+        pos.y += (tgt.y - pos.y) * (step / d);
         const yaw = Math.atan2(dx, dz);
         p.root.rotation.y += Math.atan2(Math.sin(yaw - p.root.rotation.y), Math.cos(yaw - p.root.rotation.y)) * Math.min(1, dt * 5);
-        p.ph += step * 12;
-        p.legs[0].rotation.x = Math.sin(p.ph) * 0.42; p.legs[1].rotation.x = -Math.sin(p.ph) * 0.42;
-        p.arms[0].rotation.x = -Math.sin(p.ph) * 0.32; p.arms[1].rotation.x = Math.sin(p.ph) * 0.32;
-        p.body.position.y = Math.abs(Math.cos(p.ph)) * 0.02;
-        p.body.rotation.z = Math.sin(p.ph) * 0.05;
+        if (!still) {
+          p.ph += step * 12;
+          p.legs[0].rotation.x = Math.sin(p.ph) * 0.42; p.legs[1].rotation.x = -Math.sin(p.ph) * 0.42;
+          p.arms[0].rotation.x = -Math.sin(p.ph) * 0.32; p.arms[1].rotation.x = Math.sin(p.ph) * 0.32;
+          p.body.position.y = Math.abs(Math.cos(p.ph)) * 0.02;
+          p.body.rotation.z = Math.sin(p.ph) * 0.05;
+        }
       }
-      // 자리에 선 사람은 전시물 쪽으로 천천히 돌아선다
       for (const p of people) if (p.mode === 'stay' && p.turnTo != null) {
         p.root.rotation.y += Math.atan2(Math.sin(p.turnTo - p.root.rotation.y), Math.cos(p.turnTo - p.root.rotation.y)) * Math.min(1, dt * 3);
         p.body.rotation.z *= 0.9;

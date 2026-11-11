@@ -10,6 +10,10 @@ import { loadPackages } from './packages/package-model.js';
 import { buildDoor } from './world/door.js';
 import { buildRoom } from './world/room.js';
 import { buildPeople } from './world/people.js';
+// 2026-11-11 라이브: 실제 접속한 익명 방문자 · 벽의 작은 익명 흔적(방명록은 3D가 아니라 /guestbook/ 페이지)
+import { getBackend } from './live/backend.js';
+import { startPresence } from './live/presence.js';
+import { buildTraces } from './live/traces.js';
 import { mergeStatic, compactMaterialGroups } from './merge-static.js';
 import { createPost } from './post.js';
 import { createAudio } from './audio.js';
@@ -188,6 +192,11 @@ const room = buildRoom({ sym, packages });
 // 공간을 둘러보는 관람객들
 const people = buildPeople(room.group);
 room.obstacles.push(...people.obstacles);
+// 2026-11-11 라이브: 방문자 캐릭터는 서버가 알려 준 '지금 접속한 다른 방문자'만(최대 5명, 아무도 없으면 없음)
+const presence = startPresence((figures) => people.setFigures(figures));
+// 익명 흔적(벽의 작은 종이 조각, 누를 수 없음). 백엔드가 없으면 공간에서 뺀다(가짜 흔적을 만들지 않는다)
+const traces = buildTraces({ sym });
+room.group.add(traces.group);
 // 패키지마다 위에서 비추는 작은 조명(멀리서도 눈에 띄게)
 for (const p of room.packageSpots) {
   const sp = new THREE.SpotLight('#FFF4DF', 9, 5.2, 0.3, 0.65, 1.3);
@@ -210,7 +219,7 @@ scene.add(room.group);
 
 /* ---------- 2.0 성능: 움직이지 않는 같은 재질 메쉬 합치기(그리기 호출 절감, 보이는 모습은 같다) ---------- */
 const mergeInfo = mergeStatic(room.group, {
-  skipRoots: [...room.openables.map((o) => o.group), ...room.group.children.filter((c) => c.userData.noPick)],
+  skipRoots: [...room.openables.map((o) => o.group), ...room.group.children.filter((c) => c.userData.noPick), traces.group],
   skipMeshes: [room.floor, ...room.tiles],
 });
 mergeInfo.faceGroups = compactMaterialGroups(scene);
@@ -533,6 +542,12 @@ function unhoverTile() {
   gsap.to(t.position, { z: t.userData.base.z, duration: TIMING.hover, ease: 'power2.out', overwrite: 'auto' });
   if (!hovered) hideHover();
 }
+
+/* ---------- 2026-11-11 익명 흔적: 서버가 주는 단계(0~12)만으로 벽 조각을 놓는다 ---------- */
+getBackend().then(async (b) => {
+  if (!b) { room.group.remove(traces.group); return; }
+  try { traces.setTrace(await b.trace()); } catch (e) { /* 흔적 없이 그대로 */ }
+});
 
 /* ---------- 관람 지점(전시장 동선) ---------- */
 let stationIdx = 0;
@@ -1189,19 +1204,11 @@ $('rX').addEventListener('click', () => { ui.reader.classList.remove('large'); u
 // X는 크게 읽기 창의 실제 위치(화면 폭마다 다름)를 읽어 창 안쪽 오른쪽 위 모서리에 붙인다
 const placeX = () => {
   if (!ui.reader.classList.contains('large')) return;
-  // 2026-11-11 검수: 창이 위로는 상단 바(로고·조명 알약), 아래로는 조작 패널과 겹치지 않게 그 사이에 맞춘다
-  // (휴대폰에서 창 아래끝이 조작 패널을 6px 덮었다). 위아래 간격 12px
-  const topBar = Math.max(...[...document.querySelectorAll('.top .logo, .top .daymode, .top-r > *')]
-    .map((el) => el.getBoundingClientRect()).filter((b) => b.width && b.height).map((b) => b.bottom), 0);
-  const tTop = Math.max(80, Math.round(topBar + 12));
-  ui.rText.style.top = `${tTop}px`;
-  // 원래 높이 상한(화면 높이 − 290px)은 그대로 두고, 그보다 조작 패널이 가까우면 패널 위 12px까지만. offsetTop: 올라오는 움직임(transform)과 상관없는 최종 위치
-  ui.rText.style.maxHeight = `${Math.max(160, Math.round(Math.min(innerHeight - 290, ui.reader.offsetTop - 12 - tTop)))}px`;
   const r = ui.rText.getBoundingClientRect(), x = $('rX');
   x.style.top = `${Math.round(r.top + 12)}px`;
   x.style.right = `${Math.round(innerWidth - r.right + 12 + (ui.rText.offsetWidth - ui.rText.clientWidth))}px`;
 };
-new MutationObserver(() => { requestAnimationFrame(placeX); setTimeout(placeX, 600); }).observe(ui.reader, { attributes: true, attributeFilter: ['class'] });   // 패널이 올라오는 움직임(0.5초)이 끝난 뒤 한 번 더
+new MutationObserver(() => requestAnimationFrame(placeX)).observe(ui.reader, { attributes: true, attributeFilter: ['class'] });
 addEventListener('resize', placeX);
 ui.rLarge.addEventListener('click', () => {
   const on = ui.reader.classList.toggle('large');
@@ -1413,7 +1420,8 @@ const loop = () => {
   // rev5: 입력이 없어도 문 앞으로 되돌리지(새로고침하지) 않는다. 방을 나가는 것은 관람객이 직접 나갈 때뿐
   // 2.0 최종: 문을 지나 들어오는 동안에는 관람객을 숨긴다(화면 가장자리에 머리가 불쑥 보이던 문제). 도착 시점엔 화면 밖에 있다
   people.setVisible(!state.is(S.INITIAL, S.DOOR_HOVER, S.DOOR_OPENING, S.CAMERA_ENTERING, S.LEAVING));
-  if (lastInput > arrivedAt + 50 && state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER, S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING, S.RETURN_TO_ROOM)) people.setActive(true);
+  // 2026-11-11 라이브: 바로 입장(문 연출 없음)은 arrivedAt이 없어 실제 방문자 캐릭터가 계속 멈춰 있었다 → 그 경우는 방 안이면 바로 움직인다
+  if ((lastInput > arrivedAt + 50 || arrivedAt === Infinity) && state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER, S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING, S.RETURN_TO_ROOM)) people.setActive(true);
   rig.update(dt, !state.allows('look') || asking);
   // 문: 열림 각도 + 호버 시 살짝 벌어짐 + 손잡이
   // 문 앞에서 7초 넘게 머뭇거리면 방 안의 빛이 문틈을 뚫고 새어 나온다(움직이면 잦아든다)
@@ -1542,5 +1550,6 @@ window.__hirang = {
   spread: () => active?.spread, camera, door: doorFx, rig,
   project(o3d) { const v = o3d.getWorldPosition(new THREE.Vector3()).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; },
   renderer, post, scene, perf, mergeInfo, texCap, audio,
+  presence, traces,
   objects: room.openables, doorMesh: door.hit[0], entryTl: () => entryTl, lastStop: () => lastStop, stopMove, insp, pkgGo, pkgStep, exitRoom, people, setIdle: (ms) => { lastInput = performance.now() - ms; },
 };

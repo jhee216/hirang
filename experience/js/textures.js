@@ -114,18 +114,10 @@ export function plaqueTexture() {
   x.fillStyle = COLORS.ink;
   let fs = 108;
   do { x.font = `800 ${fs}px ${FONTS.en}`; fs -= 2; } while (x.measureText('SECRET READING ZONE').width > W - 365 && fs > 60);   // 캔버스 안에 다 들어오게
-  // 2026-11-11 검수: 심볼을 뺀 뒤 왼쪽 345px가 빈 채로 남아 글자 묶음이 명판 오른쪽으로 치우쳤다(문 위에 놓이면 문 가운데에서 어긋남)
-  // → 두 줄 묶음을 명판 가운데에 놓는다. 두 줄의 왼쪽 선은 그대로 맞춘다
-  const enW = x.measureText('SECRET READING ZONE').width;
-  const enFont = x.font;
-  x.font = `700 66px ${FONTS.ko}`;
-  const koW = x.measureText('비밀독서구역 하이랑').width;
-  const x0 = Math.round((W - Math.max(enW, koW)) / 2);
-  x.font = enFont;
-  x.fillText('SECRET READING ZONE', x0, H * 0.4);
+  x.fillText('SECRET READING ZONE', 345, H * 0.4);
   x.fillStyle = COLORS.moss;
   x.font = `700 66px ${FONTS.ko}`;
-  x.fillText('비밀독서구역 하이랑', x0 + 4, H * 0.72);
+  x.fillText('비밀독서구역 하이랑', 349, H * 0.72);
   return toTex(c);
 }
 

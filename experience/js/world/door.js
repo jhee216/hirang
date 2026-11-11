@@ -350,8 +350,7 @@ export function buildDoor() {
       if (x - PW * sc / 2 >= edge) { plaque.position.set(x, 1.37, z); plaque.scale.setScalar(sc); return; }   // rev4: blender 명판 높이(1.19–1.55 m)의 가운데
     }
     plaque.position.set(0, RV.hc + RV.r + 0.42, z);
-    // 2026-11-11 검수: 휴대폰처럼 문 위에 놓일 때 0.92배로 묶여 글자가 너무 작았다 → 화면 폭 안에서 1.15배까지
-    plaque.scale.setScalar(Math.min(1.15, (halfW * 2 * 0.84) / PW));
+    plaque.scale.setScalar(Math.min(0.92, (halfW * 2 * 0.84) / PW));
   }
   placePlaque(3);
   plaque.receiveShadow = false;

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GUESTBOOK · 비밀독서구역 하이랑</title>
+<meta name="description" content="하이랑 방명록 — 당신의 한 페이지를 남겨주세요.">
+<meta name="theme-color" content="#FFF9EA">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="guestbook.css">
+</head>
+<body>
+<!-- 공용 로고: 웹사이트(.hl-glogo)·3D와 같은 자리·같은 크기 -->
+<a class="hl-glogo" href="../index.html?view=website" aria-label="하이랑 홈으로"><img src="assets/hirang-logo.png" alt="hirang" width="920" height="297"></a>
+<nav class="gb-top" aria-label="주요 메뉴">
+  <a href="../index.html?view=website">홈</a>
+  <a href="../experience/index.html" id="toRoom">비밀독서구역 3D</a>
+  <a href="./" aria-current="page">GUESTBOOK</a>
+</nav>
+
+<main class="archive-room" id="room" data-mode="write">
+  <!-- 공간: 종이 병풍(가운데 판 + 비스듬히 접힌 양쪽 판). 3D 독서구역의 아치·셸프와 다른, 접힌 종이의 건축 -->
+  <div class="screen" aria-hidden="true">
+    <div class="panel pl"></div><div class="panel pc"><span class="seam"></span></div><div class="panel pr"></div>
+    <div class="floor"></div>
+  </div>
+  <!-- 익명의 흔적: 하이랑 심볼 종이 조각이 단계(로그)에 따라 흩어짐 → 꽃잎 무늬 → 고리 무늬로 모인다. 개수로 방문 수를 셀 수 없다 -->
+  <svg class="traces" id="traces" aria-hidden="true" viewBox="-500 -500 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
+
+  <p class="label" aria-hidden="true"><span>GUESTBOOK</span><i></i><span>THE SECRET ARCHIVE</span></p>
+  <p class="preview-note" id="previewNote" role="note" hidden>미리보기 · 아직 페이지가 저장되지 않습니다</p>
+
+  <div class="desk">
+    <!-- 가운데: 한 장의 페이지 -->
+    <section class="sheet-wrap" aria-label="한 페이지">
+      <div class="under u1" aria-hidden="true"></div><div class="under u2" aria-hidden="true"></div>
+      <article class="sheet" id="sheet">
+        <header class="sheet-head">
+          <span class="eyebrow" id="eyebrow">ONE PAGE</span>
+          <span class="mode" role="tablist" aria-label="쓰기 또는 읽기">
+            <button type="button" role="tab" id="mWrite" aria-selected="true">쓰기</button>
+            <button type="button" role="tab" id="mRead" aria-selected="false">펼쳐 읽기</button>
+          </span>
+        </header>
+
+        <!-- 쓰기 -->
+        <form id="form" class="write" novalidate>
+          <label class="prompt" for="body">당신의 한 페이지를 남겨주세요.</label>
+          <textarea id="body" maxlength="300" rows="8" required></textarea>
+          <div class="count" aria-hidden="true"><span id="count">0</span> / 300</div>
+
+          <div class="margin">
+            <div class="row" role="radiogroup" aria-label="이름">
+              <span class="k">이름</span>
+              <label class="t"><input type="radio" name="identity" value="anonymous" checked><span>익명</span></label>
+              <label class="t"><input type="radio" name="identity" value="nickname"><span>닉네임</span></label>
+              <label class="t"><input type="radio" name="identity" value="realname"><span>실명</span></label>
+              <input type="text" id="name" maxlength="20" autocomplete="off" aria-label="이름" hidden>
+            </div>
+            <div class="row" role="radiogroup" aria-label="공개" aria-describedby="visHint">
+              <span class="k">공개</span>
+              <label class="t"><input type="radio" name="visibility" value="private" checked><span>숨기기</span></label>
+              <label class="t"><input type="radio" name="visibility" value="public"><span>보여 주기</span></label>
+              <label class="t chk" id="showNameRow" hidden><input type="checkbox" id="showName"><span>이름도 보여 주기</span></label>
+            </div>
+            <p class="hint" id="visHint">관리자만 읽을 수 있습니다.</p>
+            <input type="text" name="website" id="website" class="trap" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <p class="err" id="err" role="alert"></p>
+            <div class="foot">
+              <span class="fine">작성 시각은 공개되지 않습니다.</span>
+              <button type="submit" id="submit">페이지 남기기</button>
+            </div>
+          </div>
+        </form>
+
+        <!-- 읽기: 작성자가 '보여 주기'를 고른 페이지만 서버에서 온다 -->
+        <div class="read" id="read" hidden>
+          <div class="leaf" id="leaf" aria-live="polite">
+            <p class="leaf-body" id="leafBody"></p>
+            <p class="leaf-name" id="leafName"></p>
+          </div>
+          <p class="empty" id="empty" hidden>아직 펼쳐 볼 수 있는 페이지가 없습니다.</p>
+          <div class="turns">
+            <button type="button" class="turn" id="prev" aria-label="앞 페이지">←</button>
+            <button type="button" class="turn" id="next" aria-label="다음 페이지">→</button>
+          </div>
+        </div>
+
+        <p class="offline" id="offline" hidden>지금은 방명록을 열 수 없습니다.</p>
+      </article>
+      <p class="sr" id="live" aria-live="polite"></p>
+    </section>
+
+    <!-- 오른쪽: 페이지가 쌓여 가는 비밀의 보관함(장수는 단계로 묶어 보여 준다 — 실제 장수가 아니다) -->
+    <aside class="archive" aria-hidden="true">
+      <div class="stack" id="stack"></div>
+      <div class="plinth"></div>
+      <span class="stack-label">ARCHIVE</span>
+    </aside>
+  </div>
+
+  <!-- 접혀 보관함으로 들어가는 종이(애니메이션 전용) -->
+  <div class="fold" id="fold" aria-hidden="true" hidden>
+    <div class="half top"><div class="face" id="faceTop"></div></div>
+    <div class="half bottom"><div class="face" id="faceBottom"></div><div class="back"></div></div>
+  </div>
+</main>
+<script type="module" src="guestbook.js"></script>
+</body>
+</html>
