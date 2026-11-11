@@ -1,128 +1,101 @@
-// 비밀독서구역 BGM: 외부 음원 없이 Web Audio로 실시간 생성한다.
-// 조용한 서점의 따뜻한 패드 화음(가단조·도리안 색), 드문드문 울리는 오르골 선율, 낮은 드론, 오래된 레코드 같은 잡음, 은은한 잔향.
-const CHORDS = [
-  [57, 60, 64, 71],   // Am(add9 느낌) A C E B
-  [53, 57, 60, 64],   // Fmaj7  F A C E
-  [50, 53, 57, 64],   // Dm9    D F A E
-  [52, 55, 59, 62],   // Em7    E G B D
-];
-const SCALE = [69, 71, 72, 74, 76, 79, 81, 83, 84];   // A 단조 펜타토닉 + 9·11(오르골 음역)
-const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+// 비밀독서구역 BGM (2.0 최종, 2026-11-10): 승인된 'Margin Notes' 원곡으로 교체.
+// 이전 버전은 외부 음원 없이 Web Audio로 패드·오르골을 실시간 합성했다(그래서 음원 파일을 바꿔도 소리가 그대로였다).
+// 원곡: ~/Downloads/Margin_Notes.mp3 (61.9 s) → assets/audio/hirang-bgm-margin-notes.mp3
+//   0–54 s 구간, 끝(54–57 s, 잦아드는 아웃트로)을 처음 3 s에 겹쳐 넣은 이음매 없는 루프, −19.9 LUFS, 160 kbps
+//   (만드는 명령: HIRANG_2.0_DESIGN_DIRECTION.md 9장)
+// 재생: 디코드한 버퍼를 AudioBufferSourceNode.loop로 — <audio loop>와 달리 루프 지점에 빈틈·딸깍 소리가 없다.
+// 사용자 동작(문 클릭·첫 터치) 안에서만 시작(자동 재생 제한), 인스턴스 하나, 읽는 동안 음량을 낮춘다.
+const SRC = 'assets/audio/hirang-bgm-margin-notes.mp3?v=20261110';   // 파일을 바꾸면 v를 올려 캐시된 옛 파일을 피한다
+const LOOP_SEC = 54.0;
+const READING_DUCK = 0.45;   // 책·패키지를 펼쳐 읽는 동안 음량 배율
+const FADE_IN = 3.0;
 
 export function createAudio() {
-  let ctx = null, master = null, wet = null, timer = 0, nextChord = 0, nextNote = 0, chordIdx = 0, noteIdx = 4;
-  let on = true;
+  let ctx = null, master = null, duck = null, source = null, buffer = null, loading = null, meter = null;
+  let on = true, volume = 0.4,   // 2026-11-11: 처음 음량 60 → 40
+  reading = false, wanted = false, startedAt = 0;
   try { on = localStorage.getItem('hirang-bgm') !== 'off'; } catch (e) { /* 저장소 없음 */ }
-
-  function impulse(sec) {
-    const len = Math.floor(ctx.sampleRate * sec), buf = ctx.createBuffer(2, len, ctx.sampleRate);
-    for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
-    return buf;
-  }
+  try { const v = parseFloat(localStorage.getItem('hirang-bgm-vol-v2')); if (v >= 0 && v <= 1) volume = v; } catch (e) { /* 저장소 없음 */ }
+  const state = { src: SRC, loaded: false, playing: false, error: null, duration: 0, loopStart: 0, loopEnd: 0 };
 
   function init() {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = 0;
-    const comp = ctx.createDynamicsCompressor();
-    master.connect(comp).connect(ctx.destination);
-    const verb = ctx.createConvolver(); verb.buffer = impulse(3.6);
-    wet = ctx.createGain(); wet.gain.value = 0.55;
-    wet.connect(verb).connect(master);
-    // 낮은 드론(A1, 아주 작게) — 공간의 공기
-    const drone = ctx.createOscillator(); drone.type = 'sine'; drone.frequency.value = hz(33);
-    const dg = ctx.createGain(); dg.gain.value = 0.035;
-    const dlfo = ctx.createOscillator(); dlfo.frequency.value = 0.07;
-    const dlg = ctx.createGain(); dlg.gain.value = 0.015;
-    dlfo.connect(dlg).connect(dg.gain);
-    drone.connect(dg).connect(master); dg.connect(wet);
-    drone.start(); dlfo.start();
-    // 레코드 잡음: 아주 옅은 바스락거림
-    const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), nd = nb.getChannelData(0);
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() < 0.0008 ? (Math.random() * 2 - 1) * 0.6 : (Math.random() * 2 - 1) * 0.012;
-    const noise = ctx.createBufferSource(); noise.buffer = nb; noise.loop = true;
-    const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2400; nf.Q.value = 0.6;
-    const ng = ctx.createGain(); ng.gain.value = 0.16;
-    noise.connect(nf).connect(ng).connect(master); noise.start();
-    nextChord = nextNote = ctx.currentTime + 0.2;
-    timer = setInterval(schedule, 200);
+    master = ctx.createGain(); master.gain.value = 0;          // 켜기/끄기·음량
+    duck = ctx.createGain(); duck.gain.value = 1;              // 읽는 동안 낮추기
+    master.connect(duck).connect(ctx.destination);
+    meter = ctx.createAnalyser(); meter.fftSize = 2048; duck.connect(meter);   // 확인용: 실제로 나가는 소리 크기
+    loading = fetch(SRC, { cache: 'no-cache' })
+      .then((r) => { if (!r.ok) throw new Error(`BGM ${r.status}`); return r.arrayBuffer(); })
+      .then((ab) => new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej)))
+      .then((buf) => { buffer = buf; state.loaded = true; state.duration = buf.duration; if (wanted) play(); })
+      .catch((e) => { state.error = String(e); console.warn('[HIRANG BGM]', e); });
   }
 
-  // 패드: 두 개의 살짝 어긋난 오실레이터를 부드러운 저역 필터로
-  function pad(t, notes, dur) {
-    for (const m of notes) {
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.028, t + 2.6);
-      g.gain.setValueAtTime(0.028, t + dur - 2.4);
-      g.gain.linearRampToValueAtTime(0, t + dur + 0.6);
-      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 0.3;
-      g.connect(f); f.connect(master); f.connect(wet);
-      for (const [type, det] of [['triangle', -6], ['sine', 7]]) {
-        const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz(m); o.detune.value = det;
-        o.connect(g); o.start(t); o.stop(t + dur + 0.8);
-      }
-    }
+  function play() {
+    if (!buffer || source) return;                             // 인스턴스는 하나만
+    source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    // 디코더가 앞에 붙인 여백(인코더 지연)이 있으면 건너뛰어 정확히 54 s 구간만 돈다
+    const pad = Math.max(0, buffer.duration - LOOP_SEC);
+    source.loopStart = pad; source.loopEnd = pad + LOOP_SEC;
+    state.loopStart = source.loopStart; state.loopEnd = source.loopEnd;
+    source.connect(master);
+    source.start(ctx.currentTime + 0.05, pad);
+    startedAt = ctx.currentTime + 0.05;
+    state.playing = true;
   }
 
-  // 오르골: 짧게 울리고 길게 사라지는 맑은 음(기음 + 배음)
-  function chime(t, m) {
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.06, t + 0.006);
-    g.gain.exponentialRampToValueAtTime(0.0008, t + 2.4);
-    g.connect(wet); g.connect(master);
-    for (const [mult, amp] of [[1, 1], [2.01, 0.32], [4.02, 0.08]]) {
-      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = hz(m) * mult;
-      const og = ctx.createGain(); og.gain.value = amp;
-      o.connect(og).connect(g); o.start(t); o.stop(t + 2.5);
-    }
+  function ramp(node, value, sec) {
+    const t = ctx.currentTime;
+    node.gain.cancelScheduledValues(t);
+    node.gain.setValueAtTime(node.gain.value, t);
+    node.gain.linearRampToValueAtTime(value, t + sec);
   }
 
-  function schedule() {
-    const ahead = ctx.currentTime + 1.2;
-    while (nextChord < ahead) {
-      pad(nextChord, CHORDS[chordIdx % CHORDS.length], 9.5);
-      chordIdx++;
-      nextChord += 8;
-    }
-    while (nextNote < ahead) {
-      // 드문드문, 비밀을 속삭이듯: 이웃한 음으로 걸어가는 선율
-      if (Math.random() < 0.62) {
-        noteIdx = Math.max(0, Math.min(SCALE.length - 1, noteIdx + [-2, -1, -1, 1, 1, 2][Math.floor(Math.random() * 6)]));
-        chime(nextNote, SCALE[noteIdx]);
-        if (Math.random() < 0.18) chime(nextNote + 0.32, SCALE[Math.max(0, noteIdx - 2)]);
-      }
-      nextNote += [0.75, 1.0, 1.5, 1.5, 2.25][Math.floor(Math.random() * 5)];
-    }
+  function apply(sec) {
+    if (!ctx) return;
+    ramp(master, on ? volume : 0, sec);
   }
 
   function setOn(v) {
     on = v;
     try { localStorage.setItem('hirang-bgm', v ? 'on' : 'off'); } catch (e) { /* 저장소 없음 */ }
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    master.gain.cancelScheduledValues(t);
-    master.gain.setValueAtTime(master.gain.value, t);
-    master.gain.linearRampToValueAtTime(v ? 0.9 : 0, t + 1.5);
+    apply(v ? FADE_IN : 1.2);
   }
 
   return {
     isOn: () => on,
-    // 사용자 동작(문 클릭) 안에서 호출해야 소리가 난다
+    getVolume: () => volume,
+    // 지금 스피커로 나가는 소리의 RMS(dBFS). 무음이면 −100
+    level() { if (!meter) return -100; const a = new Float32Array(meter.fftSize); meter.getFloatTimeDomainData(a); let e = 0; for (const v of a) e += v * v; return 10 * Math.log10(e / a.length + 1e-10); },
+    position: () => (ctx && source ? ((ctx.currentTime - startedAt) % LOOP_SEC) : 0),
+    info: () => ({ ...state, ctxState: ctx?.state ?? 'none', gain: master?.gain.value ?? 0, duck: duck?.gain.value ?? 1, volume, on, reading }),
+    // 사용자 동작(문 클릭) 안에서 호출해야 소리가 난다. 여러 번 불려도 소리는 하나
     start() {
       init();
+      wanted = true;
       if (ctx.state === 'suspended') ctx.resume();
+      play();
       setOn(on);
     },
-    toggle() { if (!ctx) init(); if (ctx.state === 'suspended') ctx.resume(); setOn(!on); return on; },
+    toggle() { this.start(); setOn(!on); return on; },
+    setVolume(v) {
+      volume = Math.max(0, Math.min(1, v));
+      try { localStorage.setItem('hirang-bgm-vol-v2', String(volume)); } catch (e) { /* 저장소 없음 */ }
+      apply(0.25);
+    },
+    // 읽는 동안은 음악을 한 걸음 뒤로(매 프레임 불려도 상태가 바뀔 때만 동작)
+    setReading(r) {
+      if (r === reading) return;
+      reading = r;
+      if (ctx) ramp(duck, r ? READING_DUCK : 1, r ? 1.2 : 2.0);
+    },
     fadeOut(sec = 3) {
       if (!ctx) return;
-      const t = ctx.currentTime;
-      master.gain.cancelScheduledValues(t);
-      master.gain.setValueAtTime(master.gain.value, t);
-      master.gain.linearRampToValueAtTime(0, t + sec);
-      setTimeout(() => clearInterval(timer), sec * 1000 + 100);
+      ramp(master, 0, sec);
+      setTimeout(() => { try { source?.stop(); } catch (e) { /* 이미 멈춤 */ } source = null; state.playing = false; }, sec * 1000 + 100);
     },
   };
 }

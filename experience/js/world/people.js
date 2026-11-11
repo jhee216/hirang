@@ -2,7 +2,9 @@
 // 몇 명은 전시물 앞에 서서 보고, 한 명은 천천히 걸어 다닌다. 클릭 대상이 아니며(noPick), 서 있는 사람은 걷기 경로에서 피한다.
 import * as THREE from 'three';
 
-const mat = (c, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r, emissive: c, emissiveIntensity: 0.12 });
+import { sharedMat } from '../mat-cache.js';
+// 2.0: 같은 색 재질 공유(관람객 5~7명이 같은 색을 많이 쓴다)
+const mat = (c, r = 0.85) => sharedMat(c, r, { emissive: c, emissiveIntensity: 0.12 });
 
 // 하이랑 관람객 캐릭터(약 1m): 콩·달걀·동그라미 머리, 모자·머리 모양·눈·옷·소품을 조합해 저마다 다르게
 function figure({ skin = '#F1DCC8', head = 'round', hair = 'bun', hairColor = '#4A3A2E', hat = '#C1B1D1',
@@ -127,20 +129,29 @@ const LOOKS = [
   { head: 'round', hair: 'bob', hairColor: '#2E2724', eyes: 'glasses', outfit: 'dress', top: '#EFE5A2', skin: '#E8C8AA', extra: 'book', height: 1.01 },
 ];
 
-// 걷는 길(전시물을 피하는 통로)과 바라보는 자리
+// 2.0 최종(3차): 관람객이 다시 드나든다. 단, 정문(관람자의 카메라가 서는 곳)이 아니라
+// 오른쪽 뒤 계단 위의 노란 빛 아치 문으로 들어오고 나간다 → 첫 실내 구도·셸프 정면·패키지 앞을 가로지르지 않는다.
+// 통로는 셸프 뒤와 양옆 벽 쪽 통로뿐. 노드 = [x, z, 높이 y](계단은 높이가 바뀐다)
+const ENTER_FROM_DOOR = true;
 const NODES = {
-  OUT: [0, 1.7], DOOR: [0, 0.15], E: [0, -0.9], F: [0, -1.9],
-  LF: [-0.8, -2.2], LB: [-0.8, -4.3], RF: [0.8, -2.2], RB: [0.8, -4.3], B: [0, -4.4],
-  BL: [-1.9, -4.6], BL2: [-1.95, -5.85], BR: [1.9, -4.6], BR2: [1.95, -5.6],
+  OUT: [4.12, -6.85, 1.2], PLAT: [3.25, -6.85, 1.2], STT: [2.62, -6.85, 1.2], STB: [1.02, -6.85, 0],
+  BC: [0, -6.45], RG: [1.42, -5.82], BL2: [-2.05, -6.3],
+  LW: [-2.78, -5.25], LW2: [-2.78, -4.3], LM: [-2.62, -3.72], LWB: [-3.3, -3.55], LWF: [-3.3, -1.45], LF: [-1.9, -1.45],
+  // 2026-11-11: 정문(출구)으로도 드나든다 — 문 밖 DOOR → 문턱 안 DIN → 양옆 테이블 앞 통로
+  DOOR: [0, 1.0], DIN: [0, -0.75],
+  BR: [2.6, -5.35], RW2: [2.78, -4.3], RM: [2.62, -3.72], RWB: [3.3, -3.55], RWF: [3.3, -1.45], RF: [1.9, -1.45],
 };
-const EDGES = [['OUT', 'DOOR'], ['DOOR', 'E'], ['E', 'F'], ['F', 'LF'], ['F', 'RF'], ['LF', 'LB'], ['RF', 'RB'], ['LB', 'B'], ['RB', 'B'],
-  ['LB', 'BL'], ['BL', 'BL2'], ['RB', 'BR'], ['BR', 'BR2'], ['BL2', 'BR2']];
-// [노드, 서는 자리 x, z, 바라보는 곳 x, z, 자세]
+// (테이블로 갈 때는 벽 쪽으로 돌아 앞에서 들어간다 — 입구에서 보는 Ch1·Ch2 시선(약 29°)과 셸프 정면을 가로지르지 않게. 뒤쪽 통로·뒷벽 큐레이션 앞은 첫 구도 가장자리에 멀리 보인다)
+const EDGES = [['OUT', 'PLAT'], ['PLAT', 'STT'], ['STT', 'STB'], ['STB', 'BC'], ['STB', 'RG'], ['BC', 'BL2'],
+  ['BL2', 'LW'], ['LW', 'LW2'], ['LW2', 'LM'], ['LM', 'LWB'], ['LWB', 'LWF'], ['LWF', 'LF'],
+  ['RG', 'BR'], ['BR', 'RW2'], ['RW2', 'RM'], ['RM', 'RWB'], ['RWB', 'RWF'], ['RWF', 'RF'],
+  ['DOOR', 'DIN'], ['DIN', 'LF'], ['DIN', 'RF']];
+const EXITS = ['OUT', 'DOOR'];   // 계단 위 아치 문 · 정문(출구)
+// [노드, 서는 자리 x, z, 바라보는 곳 x, z, 자세] — 양옆 큐레이션 테이블, Ch1·Ch2를 바깥쪽에서, 뒷벽 큐레이션
 const SPOTS = [
-  ['LF', -1.95, -2.2, -2.6, -2.2, 'read'], ['LF', -1.95, -3.0, -2.6, -3.0, 'read'],
+  ['LF', -1.95, -2.2, -2.6, -2.2, 'read'], ['LF', -1.95, -2.95, -2.6, -2.95, 'read'],
   ['RF', 1.95, -2.3, 2.6, -2.3, 'read'], ['RF', 1.95, -2.95, 2.6, -2.95, 'read'],
-  ['LF', -0.95, -2.85, -1.45, -3.45, 'look'], ['RF', 0.95, -2.85, 1.45, -3.45, 'look'], ['F', 0.3, -2.95, 0, -3.75, 'look'],
-  ['B', -0.7, -4.6, -0.7, -5.2, 'look'], ['B', 0.7, -4.6, 0.7, -5.2, 'look'],
+  ['LM', -2.62, -3.72, -1.85, -3.9, 'look'], ['RM', 2.62, -3.72, 1.85, -3.9, 'look'],
   ['BL2', -2.6, -6.75, -3.1, -7.8, 'look'], ['BL2', -1.95, -6.9, -3.1, -7.8, 'look'],
 ];
 const adj = {};
@@ -151,13 +162,13 @@ function route(from, to) {
   const path = []; for (let n = to; n; n = prev[n]) path.unshift(n);
   return path;
 }
-const V = (xz) => new THREE.Vector3(xz[0], 0, xz[1]);
+const V = (n) => new THREE.Vector3(n[0], n[2] || 0, n[1]);
 const rand = (a, b) => a + Math.random() * (b - a);
 
 export function buildPeople(group) {
   const people = [];
   const taken = new Set();
-  let active = false, spawnT = 6, cap = 4;
+  let active = false, spawnT = 4, cap = 3;
 
   function pose(p, kind) {
     if (kind === 'read') { p.arms.forEach((a, i) => { a.rotation.x = -1.0; a.rotation.z = (i ? -1 : 1) * 0.3; }); p.head.rotation.x = 0.15; }
@@ -174,11 +185,13 @@ export function buildPeople(group) {
     if (final) path.push(final);
     p.path = path; p.dest = node; p.mode = 'walk'; pose(p, 'walk');
   }
+  // 2.0 최종(3차): 원래(1.x)처럼 몇 곳을 둘러본 뒤(visits) 나간다. 빈자리 중 하나로 통로를 따라 걸어간다
   function nextAction(p) {
     if (p.spot >= 0) { taken.delete(p.spot); p.spot = -1; }
-    if (p.visits <= 0 || !active) { goTo(p, 'OUT'); p.leaving = true; return; }
+    const leave = () => { const ex = EXITS[Math.floor(Math.random() * EXITS.length)]; goTo(p, ex); p.leaving = true; };
+    if (p.visits <= 0 || !active) { leave(); return; }
     const i = freeSpot();
-    if (i < 0) { goTo(p, 'OUT'); p.leaving = true; return; }
+    if (i < 0) { leave(); return; }
     const sp = SPOTS[i];
     taken.add(i); p.spot = i; p.visits--;
     goTo(p, sp[0], new THREE.Vector3(sp[1], 0, sp[2]));
@@ -194,14 +207,16 @@ export function buildPeople(group) {
       f.root.rotation.y = Math.atan2(sp[3] - sp[1], sp[4] - sp[2]);
       p.mode = 'stay'; p.wait = rand(2, 9); pose(p, sp[5]);
     } else {
-      f.root.position.copy(V(NODES.OUT));
-      f.root.rotation.y = Math.PI;
+      const from = EXITS[Math.floor(Math.random() * EXITS.length)];
+      p.node = from;
+      f.root.position.copy(V(NODES[from]));
+      f.root.rotation.y = from === 'DOOR' ? Math.PI : -Math.PI / 2;   // 정문에서는 방 안(−z), 아치 문에서는 방 쪽(−x)을 보며 들어온다
       nextAction(p);
     }
     people.push(p);
   }
-  // 처음 안에 있는 다섯 명
-  [0, 1, 2, 3, 4].forEach((k, i) => spawn(LOOKS[k], [0, 7, 9, 3, 5][i]));
+  // 처음 안에 있는 두 명(왼쪽 테이블·뒷벽 큐레이션). 나머지는 계단 위 아치 문으로 드나든다
+  [0, 1].forEach((k, i) => spawn(LOOKS[k], [0, 6][i]));
 
   function remove(p) {
     group.remove(p.root);
@@ -213,16 +228,17 @@ export function buildPeople(group) {
     obstacles: [],
     // 플레이어가 안에 들어온 동안에만 드나든다(문이 열려 있을 때)
     setActive(on) { active = on; },
+    setVisible(v) { for (const p of people) p.root.visible = v; },
     count: () => people.length,
     debug: () => ({ active, cap, spawnT, people: people.map((p) => ({ mode: p.mode, wait: +p.wait.toFixed(1), node: p.node, dest: p.dest, spot: p.spot, path: p.path.length, leaving: p.leaving })) }),
     update(t, dt, still) {
       if (still) return;
       // 드나들기: 가끔 새 관람객이 문으로 들어온다. 머무는 인원 상한도 천천히 바뀐다
-      if (active) {
+      if (active && ENTER_FROM_DOOR) {
         spawnT -= dt;
         if (spawnT <= 0) {
           spawnT = rand(7, 14);
-          if (Math.random() < 0.3) cap = 3 + Math.floor(Math.random() * 4);
+          if (Math.random() < 0.3) cap = 2 + Math.floor(Math.random() * 3);   // 2~4명(성능·혼잡)
           const inside = people.filter((p) => !p.leaving).length;
           if (inside < cap) {
             const used = new Set(people.map((p) => p.look));
@@ -243,7 +259,7 @@ export function buildPeople(group) {
         // 걷기
         const tgt = p.path[0];
         if (!tgt) {
-          if (p.leaving && p.dest === 'OUT') { remove(p); continue; }
+          if (p.leaving && EXITS.includes(p.dest)) { remove(p); continue; }
           p.node = p.dest;
           const sp = SPOTS[p.spot];
           if (sp) {
@@ -255,9 +271,10 @@ export function buildPeople(group) {
         }
         const pos = p.root.position;
         const dx = tgt.x - pos.x, dz = tgt.z - pos.z, d = Math.hypot(dx, dz);
-        if (d < 0.03) { p.path.shift(); continue; }
+        if (d < 0.03) { pos.y = tgt.y; p.path.shift(); continue; }
         const step = Math.min(d, 0.42 * dt);
         pos.x += dx / d * step; pos.z += dz / d * step;
+        pos.y += (tgt.y - pos.y) * (step / d);   // 계단: 높이도 같은 비율로
         const yaw = Math.atan2(dx, dz);
         p.root.rotation.y += Math.atan2(Math.sin(yaw - p.root.rotation.y), Math.cos(yaw - p.root.rotation.y)) * Math.min(1, dt * 5);
         p.ph += step * 12;

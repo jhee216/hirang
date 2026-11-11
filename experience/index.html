@@ -58,6 +58,7 @@
     <nav class="top-r" aria-label="경험 메뉴">
       <button type="button" id="skipIntro" class="ghost">바로 입장</button>
       <button type="button" id="bgmBtn" class="ghost" aria-pressed="true" hidden>♪ BGM 켜짐</button>
+      <input type="range" id="bgmVol" class="bgm-vol" min="0" max="100" step="1" value="40" aria-label="BGM 음량" title="BGM 음량" hidden>
       <a class="ghost" id="homeBtn" href="../index.html?view=website">홈으로 돌아가기</a>
     </nav>
   </header>
@@ -93,6 +94,7 @@
     </div>
   </section>
   <p id="rText" class="r-text" aria-live="polite"></p>
+  <button type="button" id="rX" class="r-x" aria-label="크게 읽기 닫기" title="닫기">×</button>
 
   <div id="fade" class="fade" aria-hidden="true"></div>
   <p id="toast" class="toast" role="status"></p>

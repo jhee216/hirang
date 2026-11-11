@@ -79,7 +79,7 @@ class FoldedPackage extends PackageBase {
         map: key ? tex[key] : null,
         emissiveMap: key ? tex[key] : null,
         emissive: key ? 0xffffff : new THREE.Color().setRGB(...(col || IVORY), THREE.SRGBColorSpace),
-        emissiveIntensity: key ? 0.42 : 0.22,
+        emissiveIntensity: key ? 0.12 : 0.08,   // 2026-11-11: 0.42/0.22 → 0.2/0.12 — 자체 발광이 조명 위에 더해져 윗면이 평평하게 하얗게 떴다
         color: key ? 0xcfcfcf : new THREE.Color().setRGB(...(col || IVORY), THREE.SRGBColorSpace),
         roughness: 0.82, metalness: 0, side: s,
         polygonOffset: !!o.offset, polygonOffsetFactor: o.offset || 0, polygonOffsetUnits: o.offset || 0,
@@ -248,7 +248,7 @@ class TentPouch extends PackageBase {
     this.box = new THREE.Box3();
     const kraft = '#D9C29A';
     // 종이 색이 그늘에서 올리브로 죽지 않게 같은 색을 약하게 자체 발광시킨다
-    const glow = (col) => ({ emissive: col, emissiveIntensity: 0.42 });
+    const glow = (col) => ({ emissive: col, emissiveIntensity: 0.12 });
     // 안쪽 면: 텍스처의 알파(칼선)만 쓰고 색은 크라프트로 칠한다
     const innerOf = (map) => {
       const m = new THREE.MeshStandardMaterial({ map, color: kraft, alphaTest: 0.5, roughness: 0.9, side: THREE.BackSide });
@@ -256,11 +256,11 @@ class TentPouch extends PackageBase {
       return m;
     };
     const front = ch3FrontTexture(sym, wordImg);
-    const outerFront = new THREE.MeshStandardMaterial({ map: front, emissiveMap: front, emissive: '#FFFFFF', emissiveIntensity: 0.42, alphaTest: 0.5, roughness: 0.8, side: THREE.FrontSide });
+    const outerFront = new THREE.MeshStandardMaterial({ map: front, emissiveMap: front, emissive: '#FFFFFF', emissiveIntensity: 0.05, color: 0xd2d2d2, alphaTest: 0.5, roughness: 0.8, side: THREE.FrontSide });
     const FH = 80, TAB = 13;                      // 덮개 높이(탭 제외)·탭 높이(mm)
     const L0 = Math.hypot(H, D / 2);
     const backTex = backTexture(W, L0, L0 - FH - TAB * 0.4);
-    const outerPlain = new THREE.MeshStandardMaterial({ map: backTex, emissiveMap: backTex, emissive: '#FFFFFF', emissiveIntensity: 0.42, roughness: 0.8, side: THREE.FrontSide });
+    const outerPlain = new THREE.MeshStandardMaterial({ map: backTex, emissiveMap: backTex, emissive: '#FFFFFF', emissiveIntensity: 0.05, color: 0xd2d2d2, roughness: 0.8, side: THREE.FrontSide });
     const innerPlain = new THREE.MeshStandardMaterial({ color: kraft, roughness: 0.9, side: THREE.BackSide });
 
     const L = Math.hypot(H, D / 2);
@@ -278,7 +278,7 @@ class TentPouch extends PackageBase {
     this.flapPivot = new THREE.Group(); this.flapPivot.position.set(0, L, 0);
     const flapGeo = panelGeo(FH + TAB);
     const flap = [
-      new THREE.Mesh(flapGeo, new THREE.MeshStandardMaterial({ map: flapTex, emissiveMap: flapTex, emissive: '#FFFFFF', emissiveIntensity: 0.42, alphaTest: 0.5, roughness: 0.8, side: THREE.FrontSide })),
+      new THREE.Mesh(flapGeo, new THREE.MeshStandardMaterial({ map: flapTex, emissiveMap: flapTex, emissive: '#FFFFFF', emissiveIntensity: 0.05, color: 0xd2d2d2, alphaTest: 0.5, roughness: 0.8, side: THREE.FrontSide })),
       new THREE.Mesh(flapGeo, innerOf(flapTex)),
     ];
     flap.forEach((m) => { m.position.z = 0.8; this.flapPivot.add(m); });
@@ -293,7 +293,8 @@ class TentPouch extends PackageBase {
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12 * 3), 3));
       return g;
     });
-    const sideMat = [new THREE.MeshStandardMaterial({ color: '#F1E9BE', ...glow('#F1E9BE'), roughness: 0.85, side: THREE.FrontSide }), new THREE.MeshStandardMaterial({ color: kraft, roughness: 0.9, side: THREE.BackSide })];
+    // rev6-5: 옆면(거셋)은 자체 발광을 줄여 앞판과 다른 면으로 읽히게(두께가 보이게)
+    const sideMat = [new THREE.MeshStandardMaterial({ color: '#E9DFAE', emissive: '#F1E9BE', emissiveIntensity: 0.03, roughness: 0.85, side: THREE.FrontSide }), new THREE.MeshStandardMaterial({ color: kraft, roughness: 0.9, side: THREE.BackSide })];
     this.sides = this.sideGeo.flatMap((g) => sideMat.map((m) => new THREE.Mesh(g, m)));
 
     // 안의 굿즈: 하이랑 스티커 시트 3장(144×204mm). 열면 위로 올라오며 부채처럼 펼쳐진다

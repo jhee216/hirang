@@ -10,6 +10,7 @@ import { loadPackages } from './packages/package-model.js';
 import { buildDoor } from './world/door.js';
 import { buildRoom } from './world/room.js';
 import { buildPeople } from './world/people.js';
+import { mergeStatic, compactMaterialGroups } from './merge-static.js';
 import { createPost } from './post.js';
 import { createAudio } from './audio.js';
 import { daylight, hourOverride } from './daylight.js';
@@ -54,29 +55,32 @@ ui.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); docu
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(COLORS.ivory);
-scene.fog = new THREE.Fog('#F6F1E6', 8, 26);   // 따뜻한 공기층
+scene.fog = new THREE.Fog('#F6F1E6', 9, 34);   // rev5: 4.5 → 9 m부터 — 문 앞(문까지 ~4.5 m, 책장까지 ~10 m)에서 방 안이 뿌옇게 바래던 안개를 걷었다. 깊이는 실제 형상·그림자로   // 따뜻한 공기층. rev4: 8 → 4.5 m부터 — 뒤쪽 벽·아치가 조금씩 공기 속으로 물러나 앞뒤 층이 갈린다
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.38;
 
 const camera = new THREE.PerspectiveCamera(CAMERA.fov, innerWidth / innerHeight, 0.03, 60);
 const isPortrait = () => innerWidth / innerHeight < 0.8;
+scene.add(camera);
+const rig = new CameraRig(camera);
+// 2.0: 렌즈(시야)는 카메라 리그가 갖고, 세로 화면은 배율만 곱한다(문 앞 50° → 방 안 44° → 관람 지점별)
 function applyFov() {
   camera.aspect = innerWidth / innerHeight;
-  camera.fov = isPortrait() ? CAMERA.portrait.fov : CAMERA.fov;
+  rig.fovScale = isPortrait() ? CAMERA.portrait.fovScale : 1;
+  rig.fovScaleIn = isPortrait() ? CAMERA.portrait.fovScaleIn : 1;
+  camera.fov = rig.fov * rig.fovScale;
   camera.updateProjectionMatrix();
 }
 applyFov();
-scene.add(camera);
-const rig = new CameraRig(camera);
 // 문 앞 시작 거리: 세로 화면은 시야가 넓어 문이 작아 보이므로 더 가까이 선다(문이 화면에 같은 크기로)
 // 문 앞 시작 거리: 기본 거리에 서되, 화면이 좁아 문 양옆 벽등까지 다 안 들어오면 그만큼 물러선다
 // (휴대폰 세로·아이패드에서 벽등이 화면 끝에 반쯤 잘려 깨져 보이지 않게)
 function startZ() {
   const base = isPortrait() ? CAMERA.portrait.startZ : CAMERA.start[2];
-  const need = DOOR.width / 2 + 0.42 + 0.22;                       // 문 반폭 + 벽등 + 여유(m)
+  const need = DOOR.width / 2 + 0.74 + 0.22;   // rev4: 문 반폭 + 벽등(문 가운데에서 1.94 m) + 여유(m)
   const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * 0.9;
-  return THREE.MathUtils.clamp(need / halfTan + DOOR.wallThickness / 2, base, 7.5);
+  return THREE.MathUtils.clamp(need / halfTan + DOOR.wallThickness / 2 + DOOR.facade, base, 7.5);
 }
 function placeStart() {
   if (!state?.is(S.INITIAL, S.DOOR_HOVER)) return;
@@ -114,6 +118,8 @@ const doorLight = new THREE.SpotLight('#FFF2D8', 6, 7, 0.55, 0.9, 1.6);
 doorLight.position.set(0, 3.7, 1.9);
 doorLight.target.position.set(0, 1.1, 0);
 scene.add(doorLight, doorLight.target);
+
+// rev6-5: 창살 햇빛 무늬(sunPatch)는 문에 낯선 그림자를 만들어 뺐다
 
 // 내부: 셸프를 비추는 천장 스포트(그림자) + 패키지 쪽 보조광 + 노란 창의 따뜻한 빛
 const shelfSpot = new THREE.SpotLight('#FFF4DE', 24, 9, 0.62, 0.85, 1.4);
@@ -171,7 +177,7 @@ await loadLogos();
 const door = buildDoor();
 // 화면 비율이 바뀌면 문 앞 구성도 그 비율에 맞게 다시 잡는다(명판 위치·크기)
 function fitPlaque() {
-  const d = startZ() - DOOR.wallThickness / 2;
+  const d = startZ() - DOOR.wallThickness / 2 - DOOR.facade;
   door.placePlaque(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * d * camera.aspect);
 }
 fitPlaque();
@@ -186,11 +192,74 @@ room.obstacles.push(...people.obstacles);
 for (const p of room.packageSpots) {
   const sp = new THREE.SpotLight('#FFF4DF', 9, 5.2, 0.3, 0.65, 1.3);
   lamps.push(sp);
+  // rev6-5: 패키지가 받침 위에 실제 그림자를 드리워 바닥에 '놓인' 물건으로 보이게(데스크톱만, 512px)
+  if (!lite) { sp.castShadow = true; sp.shadow.mapSize.set(512, 512); sp.shadow.bias = -0.0004; sp.shadow.normalBias = 0.01; sp.shadow.radius = 3; sp.shadow.camera.near = 1.5; sp.shadow.camera.far = 5.5; }
   sp.position.set(p.x * 0.8, 3.95, p.z + 0.9);
   sp.target.position.copy(p);
   scene.add(sp, sp.target);
 }
+// 2026-11-11: 큐레이션 테이블 오른쪽(오른쪽 벽·초록 징두리)이 너무 어두웠다 → 천장에서 벽을 쓸어 비추는 조명 하나(그림자 없음, 밤일수록 밝게는 lamps 규칙 그대로)
+{
+  const wash = new THREE.SpotLight('#FFF3DE', 10, 6.5, 0.75, 0.95, 1.2);
+  wash.position.set(1.6, 3.95, -2.7);
+  wash.target.position.set(3.4, 1.0, -2.7);
+  scene.add(wash, wash.target);
+  lamps.push(wash);
+}
 scene.add(room.group);
+
+/* ---------- 2.0 성능: 움직이지 않는 같은 재질 메쉬 합치기(그리기 호출 절감, 보이는 모습은 같다) ---------- */
+const mergeInfo = mergeStatic(room.group, {
+  skipRoots: [...room.openables.map((o) => o.group), ...room.group.children.filter((c) => c.userData.noPick)],
+  skipMeshes: [room.floor, ...room.tiles],
+});
+mergeInfo.faceGroups = compactMaterialGroups(scene);
+/* ---------- 2.0 성능: 휴대폰·태블릿(LITE)에서는 1536px보다 큰 원화를 1536px로 줄여 올린다 ---------- */
+// (2.0 최종: 데스크톱도 2560px 상한 — 아래). 휴대폰 화면(약 650px 폭)에서는 패키지를 가까이 열어도
+// 1536px이면 두 배 이상의 해상도라 차이가 보이지 않는다. 측정: 텍스처 59 → 약 32MP
+// 2.0 최종: 데스크톱도 2560px 상한(ch2-art 4096² 하나가 그래픽 메모리 약 89MB). 2560px은 4K 화면에서 패키지를 가까이 열어도 화면보다 크다
+const TEX_CAP = lite ? 1536 : 2560;
+const texCap = { scaled: 0, savedMP: 0 };
+{
+  const seen = new Set();
+  scene.traverse((o) => {
+    for (const m of [].concat(o.material || [])) for (const k of ['map', 'emissiveMap', 'bumpMap', 'normalMap', 'roughnessMap', 'alphaMap']) {
+      const t = m[k]; const img = t && t.image;
+      if (!img || seen.has(t) || !img.width || Math.max(img.width, img.height) <= TEX_CAP) continue;
+      seen.add(t);
+      const sc = TEX_CAP / Math.max(img.width, img.height);
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      texCap.savedMP += (img.width * img.height - c.width * c.height) / 1e6;
+      t.image = c; t.needsUpdate = true; texCap.scaled++;
+    }
+  });
+}
+/* ---------- 2.0 룩: 프리미엄 스타일라이즈드 에디토리얼(Higgsfield 셸프 참고안 R2 기준) ---------- */
+// 원래 디자인·색은 그대로 두고 '어떻게 비추나'만 다듬는다. 되돌리려면 이 블록을 지우면 된다.
+//  - 스포트 조명의 가장자리를 부드럽게(바닥·벽의 딱딱한 원형 하이라이트 제거)
+//  - 패키지 위 조명은 조금 낮춰 셸프보다 튀지 않게
+//  - 문 앞 벽등의 빛 원뿔을 부드럽게
+(function applyLook2() {
+  scene.traverse((o) => { if (o.isSpotLight) o.penumbra = Math.max(o.penumbra, 0.95); });
+  for (const l of lamps) if (l.isSpotLight && room.packageSpots.some((p) => p.distanceTo(l.target.position) < 0.01)) l.intensity *= 0.55;   // 2026-11-11: 0.7 → 0.55 — 패키지 윗면이 위에서 평평하게 하얗게 뜨던 것
+  shelfSpot.intensity *= 0.85;
+})();
+/* ---------- 2.0 최종 룩: Higgsfield F2 셸프 참고안(redesign-2.0/renders/round2/F2.png)에 맞춘 빛 ---------- */
+// F2: 고르고 따뜻한 확산광, 창살 무늬 없는 크림 바닥, 브랜드 모스 그린이 제 색(#4F5F4C) 그대로 보이는 정면.
+//  - 셸프 정면 스포트를 낮춰 초록이 밝은 세이지로 뜨지 않게(측면은 자연스럽게 한 톤 어둡다)
+//  - 왼쪽 창 햇빛 무늬(바닥의 사선 줄무늬)를 은은하게
+//  - 바닥에서 올라오는 반사광을 따뜻한 크림으로
+(function applyLookF2() {
+  shelfSpot.intensity *= 0.62;
+  // rev4(낮 공간감): 왼쪽 아치 창 햇빛을 주광(키 라이트)으로 — 0.42 → 0.85. 셸프 왼쪽 면·바닥·다이스에 방향 있는 명암과 긴 그림자가 생긴다
+  roomSun.intensity *= 0.85;
+  roomSun.shadow.radius = 5;
+  // 셸프 천장 스포트를 정면 한가운데(평평한 정면광)에서 왼쪽 위로 비켜 — 아치 안쪽·선반 아래에 그늘이 진다
+  shelfSpot.position.set(-1.35, 4.05, -2.7);
+  hemi.groundColor.set('#EADFC9');
+})();
 
 // 읽는 동안 공간을 은은하게 덮는 막(카메라에 붙어 있어 공간과의 연결감은 유지)
 const veilMat = new THREE.MeshBasicMaterial({ color: COLORS.ivory, transparent: true, opacity: 0, depthWrite: false });
@@ -206,6 +275,9 @@ function syncBgmBtn() {
   ui.bgmBtn.setAttribute('aria-pressed', String(audio.isOn()));
 }
 ui.bgmBtn.addEventListener('click', () => { audio.toggle(); syncBgmBtn(); });
+const bgmVol = $('bgmVol');
+bgmVol.value = String(Math.round(audio.getVolume() * 100));
+bgmVol.addEventListener('input', () => { audio.start(); audio.setVolume(bgmVol.value / 100); });
 // 바로 안으로 돌아온 경우(문 클릭이 없음)에는 첫 터치·클릭 때 시작한다
 addEventListener('pointerdown', function first() { if (state.get() !== S.INITIAL && state.get() !== S.DOOR_HOVER) { audio.start(); removeEventListener('pointerdown', first); } });
 
@@ -216,9 +288,11 @@ const state = createState((cur) => {
   ui.objects.hidden = !exploring;
   ui.stations.hidden = !exploring;
   ui.bgmBtn.hidden = cur === S.INITIAL || cur === S.DOOR_HOVER || cur === S.LEAVING;
+  const vol = document.getElementById('bgmVol'); if (vol) vol.hidden = ui.bgmBtn.hidden;
   syncBgmBtn();
   // 관람객 드나들기는 안에 있는 동안만(문이 열려 있을 때)
-  people.setActive(cur !== S.INITIAL && cur !== S.DOOR_HOVER && cur !== S.DOOR_OPENING && cur !== S.LEAVING);
+  // 2.0: 새 관람객은 입장·첫 구도 동안 들어오지 않는다. 방 안에서 직접 둘러보기 시작한 뒤부터(렌더 루프에서 켠다)
+  if (cur === S.INITIAL || cur === S.DOOR_HOVER || cur === S.DOOR_OPENING || cur === S.CAMERA_ENTERING || cur === S.LEAVING) people.setActive(false);
   if (!exploring) { rig.keys.f = rig.keys.t = 0; rig.turnRate = 0; showRing(null); }
   if (!exploring) hideHover();
 });
@@ -257,12 +331,13 @@ function pickWorld(x, y) {
 function setCursor(c) { ui.canvas.style.cursor = c; }
 
 // 걷기 경계: 방 안 + 전시물(셸프·테이블·받침·계단) 바닥 영역을 피한다
-const R = 0.38;
+const R = 0.26;   // 2.0 최종(3차): 0.38 → 0.26 (사람 어깨 반폭). 0.38에서는 셸프·패키지·아치 기둥 사이 통로가 모두 막혀 방 뒤쪽에 갈 수 없었다
 const DOOR_EXIT = { hw: DOOR.width / 2 + 0.1, z: -0.4 };   // 문 폭의 반, 문턱 위치(m)
 rig.limit = (p) => {
   p.x = THREE.MathUtils.clamp(p.x, -3.75, 3.75);
   // 문 앞(문 폭 안)은 문턱까지 걸어갈 수 있다 — 거기까지 가면 나가기(exitAtDoor)
-  p.z = THREE.MathUtils.clamp(p.z, -7.25, Math.abs(p.x) < DOOR_EXIT.hw ? DOOR_EXIT.z + 0.08 : -0.55);
+  // 2.0 최종(3차): 문턱 자동 나가기 제거. 걸어서는 도착 지점(z −0.5)까지만 — 나가기는 '출구' 지점·홈 버튼으로만 묻는다
+  p.z = THREE.MathUtils.clamp(p.z, -7.25, -0.5);
   for (const [x0, z0, x1, z1] of room.obstacles) {
     if (p.x > x0 - R && p.x < x1 + R && p.z > z0 - R && p.z < z1 + R) {
       const d = [p.x - (x0 - R), (x1 + R) - p.x, p.z - (z0 - R), (z1 + R) - p.z];
@@ -286,7 +361,11 @@ function showRing(p) {
 const touches = new Map();
 let pinch = null;
 ui.canvas.addEventListener('pointerdown', (e) => {
+  // rev4: 가운데 버튼(휠 누르기) = 지금 이동을 즉시 멈춤(자동 스크롤 막음)
+  if (e.pointerType === 'mouse' && e.button === 1) { e.preventDefault(); if (rig.explore) stopMove('middle'); return; }
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  ptr.stopOnTap = rig.explore && state.allows('objectClick') && rig.isMoving();   // 움직이는 중의 클릭은 '멈춤'으로만 쓴다
   if (touches.size === 2) {
     const [a, b] = [...touches.values()];
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
@@ -295,7 +374,7 @@ ui.canvas.addEventListener('pointerdown', (e) => {
   }
   ptr.down = true; ptr.id = e.pointerId; ptr.type = e.pointerType;
   ptr.x = ptr.sx = e.clientX; ptr.y = ptr.sy = e.clientY; ptr.dragged = false;
-  ui.canvas.setPointerCapture(e.pointerId);
+  try { ui.canvas.setPointerCapture(e.pointerId); } catch (err) { /* 이미 끝난 포인터 */ }
 });
 
 ui.canvas.addEventListener('pointermove', (e) => {
@@ -341,10 +420,18 @@ function endPointer(e) {
 ui.canvas.addEventListener('pointerup', endPointer);
 ui.canvas.addEventListener('pointercancel', endPointer);
 // 휠 = 보는 방향으로 걷기
+let wheelAcc = 0;
 ui.canvas.addEventListener('wheel', (e) => {
   if (!state.allows('look')) return;
   e.preventDefault();
-  rig.walk(THREE.MathUtils.clamp(-e.deltaY * CAMERA.walk.wheel, -0.4, 0.4));   // 휠 한 번에 반걸음 정도
+  // rev5: 휠 한 칸 = 한 걸음(CAMERA.walk.step). 트랙패드처럼 잘게 오는 입력은 한 칸(약 60px)만큼 모이면 한 걸음.
+  // 앞서 쌓이는 거리는 lead(두 걸음 남짓)까지만 — 마구 굴려도 끝까지 미끄러지지 않고, 빈 곳 클릭·가운데 버튼으로 바로 멈춘다
+  const unit = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  if (Math.sign(unit) !== Math.sign(wheelAcc)) wheelAcc = 0;
+  wheelAcc += unit;
+  if (Math.abs(wheelAcc) < 60 && Math.abs(unit) < 40) return;
+  const dir = -Math.sign(wheelAcc); wheelAcc = 0;
+  rig.nudge(dir * CAMERA.walk.step);
   ui.exploreHint.classList.add('done');
 }, { passive: false });
 ui.canvas.addEventListener('pointerleave', () => { if (!ptr.down) { setDoorHover(false); unhoverObject(); unhoverTile(); showRing(null); } });
@@ -379,7 +466,24 @@ function updateHover(x, y) {
   if (state.is(S.OBJECT_SELECTED)) setCursor(pick(active?.hit || [], x, y) ? 'pointer' : 'default');
 }
 
+// rev4: 이동 멈춤(왼쪽 클릭·가운데 버튼). 같은 클릭으로 책·바닥이 눌리지 않게 handleTap에서 걸러진다
+let lastStop = null;
+function stopMove(how) {
+  rig.stop();
+  showRing(null);
+  lastStop = { how, t: performance.now(), x: rig.pos.x, z: rig.pos.z };
+}
+ui.canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+ui.canvas.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+
 function handleTap(x, y) {
+  // rev5: 걷는 중 '바닥'을 누르면 멈추지 않고 그쪽으로 한 걸음 더 간다(누를 때마다 한 번씩 이동).
+  // 바닥이 아닌 빈 곳(벽·하늘 등)을 누르면 그 자리에서 멈춘다
+  if (ptr.stopOnTap) {
+    ptr.stopOnTap = false;
+    const hh = pickWorld(x, y);
+    if (!(hh && (hh.object === room.floor || hh.object.userData.openable || hh.object.userData.tileOf))) { stopMove('click'); return; }
+  }
   if (state.allows('doorClick')) {
     if (pick(doorHits, x, y)) openDoor();
     return;
@@ -438,7 +542,7 @@ function goStation(i) {
   const [, xz, look] = STATIONS[stationIdx];
   if (!xz) { askExit(); return; }               // '출구': 나갈지 먼저 묻는다
   const [x, z] = xz;
-  rig.walkTo(new THREE.Vector3(x, 0, z), new THREE.Vector3(...look));
+  rig.walkTo(new THREE.Vector3(x, 0, z), new THREE.Vector3(...look), STATIONS[stationIdx][3]);
   [...ui.stationList.children].forEach((b, k) => b.classList.toggle('on', k === stationIdx));
   announce(`${STATIONS[stationIdx][0]}(으)로 걸어갑니다`);
 }
@@ -477,6 +581,13 @@ ui.exitGo.addEventListener('click', () => { closeAsk(); exitRoom(); });
 $('homeBtn').addEventListener('click', (e) => {
   if (state.is(S.INITIAL, S.DOOR_HOVER)) return;               // 문 앞: 그대로 이동
   e.preventDefault();
+  // 2026-11-11: 상단 '홈으로 돌아가기'는 누르면 바로 간다(문까지 걸어 나가는 연출이 최대 8초 걸려 버튼이 안 되는 것처럼 보였다).
+  // 걸어 나가는 연출은 '출구' 관람 지점·나가기 창에서만 쓴다
+  if (asking) closeAsk();
+  audio.fadeOut(0.5);
+  ui.fade.classList.add('on');
+  setTimeout(() => { location.href = '../index.html?view=website'; }, 450);
+  return;
   if (asking) closeAsk();
   if (state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER)) { exitRoom(); return; }
   if (state.is(S.LEAVING)) return;
@@ -504,12 +615,11 @@ function exitAtDoor() {
   if (asking) return;
   if (!state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER)) { if (doorNear) { doorNear = false; ui.toast.classList.remove('on'); } return; }
   const p = rig.pos, inDoor = Math.abs(p.x) < DOOR_EXIT.hw;
-  if (inDoor && p.z > DOOR_EXIT.z) { doorNear = false; askExit(); return; }
   const facing = rig.forward().z > 0.55;
-  const near = inDoor && p.z > -1.25 && facing;
+  const near = inDoor && p.z > -0.9 && facing;
   if (near !== doorNear) {
     doorNear = near;
-    if (near) ui.toast.textContent = '문 쪽으로 더 걸어가면 하이랑 웹페이지로 나갑니다';
+    if (near) ui.toast.textContent = '나가려면 아래 관람 지점에서 ‘출구’를 누르세요';
     ui.toast.classList.toggle('on', near);
   }
 }
@@ -556,8 +666,15 @@ function setDoorHover(on) {
 const doorFx = { handle: 0, ajar: 0, light: 0, open: 0, twist: 0 };
 
 /* ---------- SCENE 01→02: 문 열기 + 원테이크 카메라 진입 ---------- */
+// 2.0: 화면 비율에 따라 문 앞 시작 거리가 달라지므로(startZ) 걷는 속도가 같도록 이동 시간을 거리에 맞춘다
+function entryScale() {
+  const d = rig.pos.z - (isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2]);
+  return THREE.MathUtils.clamp(d / (CAMERA.start[2] - CAMERA.arrive[2]), 0.75, 1.5);
+}
+let entryTl = null;
 function openDoor() {
   if (!state.set(S.DOOR_OPENING)) return;
+  perf.graceUntil = performance.now() + (CAMERA.entry.duration / (CAMERA.entry.speed || 1) + 3) * 1000;   // 2026-11-11: 입장 연출 중(셰이더 준비·조명 전환)의 일시적 끊김으로 화질을 내리지 않는다
   audio.start();   // 문을 여는 순간 안쪽의 음악이 천천히 들려온다
   doorHovered = false;
   setCursor('default');
@@ -567,28 +684,41 @@ function openDoor() {
   const T = TIMING;
   const look = rig.look, pos = rig.pos;
   const tl = gsap.timeline({ onComplete: arrive });
+  entryTl = tl;
+  tl.timeScale(CAMERA.entry.speed || 1);   // rev4: 입장 연출만 1.2배속(문·손잡이·카메라·렌즈·빛 모두 같은 비율 — 관계 유지)
   tl.addLabel('anticipation')
     // PHASE A: 아주 짧은 긴장 — 손잡이를 쥐는 순간
     .to(doorFx, { handle: -0.06, duration: 0.18, ease: 'sine.out' })
     .to(doorFx, { handle: -0.62, duration: T.handle, ease: 'power2.out' })
     // PHASE B: 손잡이가 다 돌아간 뒤 문이 경첩을 중심으로 열린다(카메라는 정지)
     .addLabel('opening')
-    .to(doorFx, { open: DOOR.openAngle, ajar: 0, duration: T.door, ease: 'power2.inOut' }, 'opening')
+    .to(doorFx, { open: DOOR.revealAngle, ajar: 0, duration: T.door, ease: 'power3.inOut' }, 'opening')   // rev5: 먼저 68°까지만 — 문틈으로 책장 일부만 보인다
+    .to(doorFx, { open: DOOR.openAngle, duration: CAMERA.entry.duration * entryScale() * 0.5, ease: 'sine.inOut' }, `opening+=${T.door * 0.98}`)   // 다가가는 동안 나머지가 열려 방이 차츰 드러난다   // 2.0 최종: 천천히 떨어져 → 가속 → 부드럽게 감속해 멈춤
     .to(doorFx, { handle: 0, duration: 0.5, ease: 'power2.out' }, 'opening+=0.35')
-    .to(doorFx, { light: 1.6, duration: T.door, ease: 'sine.inOut' }, 'opening')
-    // PHASE C~D: 약 80도가 지나면 카메라가 문틀을 통과해 전진
-    .addLabel('dolly', `opening+=${T.door * 0.74}`)
+    .to(doorFx, { light: 0, duration: T.door * 0.6, ease: 'sine.out' }, 'opening')   // 2026-11-11: 열릴 때 문 앞 바닥 금빛이 커지며 노랗게 튀던 것 — 호버 빛도 부드럽게 끈다   // 2.0: 1.6 → 0.85 (열릴 때 벽이 하얗게 번지던 빛 줄임)
+    // PHASE C~D (2.0): 문이 반쯤 열리면 사람 걸음으로 천천히 걸어 들어간다.
+    // sine.inOut: 부드럽게 출발 → 문턱에서 최고 약 1.3 m/s → 첫 구도에서 천천히 멈춘다. 눈높이 1.58 → 1.52, 렌즈 50° → 44°
+    .addLabel('dolly', `opening+=${T.door * CAMERA.entry.startAt}`)
     .call(() => state.set(S.CAMERA_ENTERING), null, 'dolly')
-    .to(pos, { x: CAMERA.arrive[0], y: CAMERA.arrive[1], z: isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2], duration: T.cameraEntry + T.cameraArrival, ease: 'power2.inOut' }, 'dolly')
-    .to(look, { x: CAMERA.arriveLook[0], y: CAMERA.arriveLook[1], z: CAMERA.arriveLook[2], duration: T.cameraEntry + T.cameraArrival * 0.5, ease: 'sine.inOut' }, 'dolly')
-    .to(doorFx, { light: 0, duration: 1.4, ease: 'sine.in' }, `dolly+=${T.cameraEntry * 0.6}`);
+    .to(pos, { x: CAMERA.arrive[0], y: CAMERA.arrive[1], z: isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2], duration: CAMERA.entry.duration * entryScale(), ease: 'sine.inOut' }, 'dolly')
+    .to(look, { x: CAMERA.arriveLook[0], y: isPortrait() ? CAMERA.portrait.lookY : CAMERA.arriveLook[1], z: CAMERA.arriveLook[2], duration: CAMERA.entry.duration * entryScale() * 0.92, ease: 'sine.inOut' }, 'dolly')
+    .to(rig, { fov: CAMERA.arriveFov || CAMERA.fovIn, duration: CAMERA.entry.duration * entryScale(), ease: 'sine.inOut' }, 'dolly')
+    .to(doorFx, { light: 0, duration: 1.8, ease: 'sine.in' }, `dolly+=${CAMERA.entry.duration * entryScale() * 0.55}`);
   announce('문이 열립니다');
 }
 
 // PHASE E: 도착 → 탐색 가능 상태
+let arrivedAt = Infinity;
 function arrive() {
   rig.syncBase();
-  rig.pos.y = CAMERA.eye;
+  // rev5: 도착 = '시크릿 책장' 관람 지점(눈높이·렌즈도 그 지점 값)
+  const st = STATIONS[CAMERA.arriveStation ?? 0], lens = st?.[3] || {};
+  rig.pos.y = lens.eye ?? CAMERA.eye;
+  rig.eye = rig.tEye = lens.eye ?? CAMERA.eye;
+  rig.fov = rig.tFov = (rig.fovScaleIn !== 1 && lens.pfov) || lens.fov || CAMERA.fovIn;
+  stationIdx = CAMERA.arriveStation ?? 0;
+  [...ui.stationList.children].forEach((b, k) => b.classList.toggle('on', k === stationIdx));
+  arrivedAt = performance.now();
   rig.explore = true;
   rig.target = null;
   state.set(S.ROOM_EXPLORATION);
@@ -603,10 +733,12 @@ function enterRoomDirect() {
   doorFx.open = DOOR.openAngle;
   rig.pos.set(CAMERA.arrive[0], CAMERA.arrive[1], isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2]);
   rig.look.set(...CAMERA.arriveLook);
+  if (isPortrait()) rig.look.y = CAMERA.portrait.lookY;
   state.set(S.DOOR_OPENING);
   state.set(S.CAMERA_ENTERING);
   ui.doorHint.classList.add('gone');
   ui.skip.hidden = true;
+  entK = 0; inK = 1;   // 바로 방 안에서 시작할 때는 페이드 없이 실내 조명 상태로
   arrive();
   try { history.replaceState(null, '', location.pathname); } catch (e) { /* 주소 정리는 선택 사항 */ }
 }
@@ -770,6 +902,7 @@ function select(o) {
   gsap.killTweensOf([g.position, g.rotation]);
   // 원래 자리(부모 기준)와 카메라 시선 상태 저장
   saved = { parent: g.parent, base: g.userData.base, rig: rig.snapshot() };
+  if (!isPkg(o)) { selectInPlace(o); return; }   // 2.0 최종(3차): 책은 선반에서 꺼내지 않는다
   overlay.attach(g);
   g.updateMatrixWorld();
 
@@ -801,6 +934,31 @@ function select(o) {
   });
   fillReader(o);
   announce(`${o.label} 선택됨`);
+}
+
+/* 2.0 최종(3차): 큐레이션 책은 선반 그 자리에서 펼친다 — 꺼내거나 카메라 앞으로 날아오지 않는다(영상의 집어 드는 연출과 구분).
+   ① 고른 책에 작은 빛 ② 고개만 그 책 쪽으로 천천히(서 있는 자리는 그대로) ③ 앞의 페이지 카드가 앞으로 살짝 비켜나고
+   ④ 표지가 책등을 축으로 열림 ⑤ 실제 원문은 화면 옆 읽기 패널(크게 읽기)로. 닫으면 표지·카드가 제자리로, 시선은 고르기 전으로 */
+const _bp = new THREE.Vector3();
+function selectInPlace(o) {
+  saved.inPlace = true;
+  o.inPlace = true;
+  setCursor('default');
+  o.group.getWorldPosition(_bp);
+  if (hoverLight.parent) { hoverLight.position.copy(_bp).add(new THREE.Vector3(0, 0.35, 0.55)); gsap.to(hoverLight, { intensity: 0.8, duration: 0.6, overwrite: true }); }   // 2026-11-11: 2.2 → 0.8(펼친 책이 하얗게 뜨던 것)
+  // 고개만 돌린다(위치·렌즈 그대로). 이미 화면 가운데 근처면 거의 움직이지 않는다
+  const d = _bp.clone().sub(rig.pos);
+  rig.tYaw = rig.yaw + Math.atan2(Math.sin(Math.atan2(-d.x, -d.z) - rig.yaw), Math.cos(Math.atan2(-d.x, -d.z) - rig.yaw)) * 0.85;
+  rig.tPitch = THREE.MathUtils.clamp(Math.atan2(d.y, Math.hypot(d.x, d.z)), -CAMERA.look.pitch, CAMERA.look.pitch * 0.8);
+  const card = o.pageCard;
+  if (card) gsap.to(card.position, { x: card.userData.rest.x + 0.02, z: card.userData.rest.z + 0.19, duration: 0.55, ease: 'sine.inOut' });
+  gsap.delayedCall(card ? 0.45 : 0.1, openBook);
+  fillReader(o);
+  // 원문은 옆 읽기 패널로 바로 보여 준다(책은 제자리에 펼쳐진 채 보인다)
+  ui.reader.classList.add('large');
+  ui.rLarge.setAttribute('aria-pressed', 'true');
+  announce(`${o.label}을(를) 제자리에서 펼칩니다`);
+  return true;
 }
 
 function selectPackage(o) {
@@ -841,6 +999,10 @@ function fillReader(o) {
   ui.rTitle.textContent = o.label;
   ui.rSub.textContent = isPkg(o) ? `${o.sub} · 눌러서 한 단계씩 열기` : (o.sub || '');
   ui.rMore.href = o.detailUrl;
+  // rev4: 펼친 책의 큐레이션 색을 읽기 패널에도(웹사이트 한 페이지 시트의 왼쪽 색 띠와 같은 규칙)
+  const bc = o.curation?.color || '';
+  ui.reader.style.setProperty('--bk', bc || 'transparent');
+  ui.reader.nextElementSibling?.style.setProperty('--bk', bc || 'transparent');
   ui.reader.hidden = false;
   requestAnimationFrame(() => ui.reader.classList.add('show'));
 }
@@ -888,6 +1050,25 @@ function backToRoom() {
 function returnObject() {
   if (!state.set(S.RETURN_TO_ROOM)) return;
   const o = active, g = o.group;
+  if (saved?.inPlace) {
+    ui.reader.classList.remove('show', 'large');
+    ui.rLarge.setAttribute('aria-pressed', 'false');
+    gsap.to(hoverLight, { intensity: 0, duration: 0.5, overwrite: true });
+    const card = o.pageCard;
+    if (card) gsap.to(card.position, { x: card.userData.rest.x, z: card.userData.rest.z, duration: 0.55, ease: 'sine.inOut' });
+    rig.restore(saved.rig);   // 고르기 전 시선 그대로(서 있던 자리는 처음부터 바뀌지 않았다)
+    setTimeout(() => {
+      o.disposePages(); o.showSpread(0); o.setOpen(0); o.inPlace = false;
+      ui.reader.hidden = true;
+      active = null; saved = null;
+      state.set(S.ROOM_EXPLORATION);
+      if (leaveAfterReturn) { leaveAfterReturn = false; setTimeout(exitRoom, 250); }
+      if (usingKeyboard) objButtons.get(o)?.focus({ preventScroll: true });
+      setCursor('grab');
+      announce('책을 덮었습니다');
+    }, 600);
+    return;
+  }
   ui.reader.classList.remove('show', 'large');
   ui.rLarge.setAttribute('aria-pressed', 'false');
   // 원래 자리의 월드 변환 계산
@@ -932,6 +1113,12 @@ function returnObject() {
 async function turn(dir) {
   if (isPkg(active)) { pkgStep(dir); return; }
   if (!active || !state.is(S.BOOK_READING) || active.flipping) return;
+  if (active.inPlace) {   // 제자리 펼침: 페이지를 옆 책 쪽으로 크게 넘기지 않고 펼친 면만 바꾼다
+    const n = active.spread + dir;
+    if (n < 0 || n >= active.spreadCount) return;
+    active.showSpread(n); syncReader(n);
+    return;
+  }
   const ok = active.flip(dir, TIMING.pageFlip);
   syncReader(active.spread + dir);
   await ok;
@@ -968,6 +1155,7 @@ function syncReader(spread = active?.spread ?? 0) {
   ui.reader.dataset.mode = reading ? 'reading' : 'closed';
   // 스크린리더용: 현재 펼침의 실제 텍스트
   ui.rText.textContent = reading ? [o.pageDefs[sc * 2], o.pageDefs[sc * 2 + 1]].map(defText).filter(Boolean).join('\n\n') : '';
+  // 2026-11-11: '크게 읽기'는 원래대로 원문 글 패널(클라이언트 요청으로 페이지 그림 표시는 되돌림 — 페이지 원본은 셸프 카드에만)
 }
 
 function defText(d) {
@@ -996,6 +1184,25 @@ ui.rRange.addEventListener('input', () => {
 });
 ui.rOpen.addEventListener('click', () => { if (state.is(S.OBJECT_SELECTED)) openBook(); });
 ui.rBack.addEventListener('click', backToRoom);
+// rev6-6: 크게 읽기 창 오른쪽 위 X — 아래 버튼까지 내려가지 않고 바로 닫는다(책 화면으로 돌아감)
+$('rX').addEventListener('click', () => { ui.reader.classList.remove('large'); ui.rLarge.setAttribute('aria-pressed', 'false'); });
+// X는 크게 읽기 창의 실제 위치(화면 폭마다 다름)를 읽어 창 안쪽 오른쪽 위 모서리에 붙인다
+const placeX = () => {
+  if (!ui.reader.classList.contains('large')) return;
+  // 2026-11-11 검수: 창이 위로는 상단 바(로고·조명 알약), 아래로는 조작 패널과 겹치지 않게 그 사이에 맞춘다
+  // (휴대폰에서 창 아래끝이 조작 패널을 6px 덮었다). 위아래 간격 12px
+  const topBar = Math.max(...[...document.querySelectorAll('.top .logo, .top .daymode, .top-r > *')]
+    .map((el) => el.getBoundingClientRect()).filter((b) => b.width && b.height).map((b) => b.bottom), 0);
+  const tTop = Math.max(80, Math.round(topBar + 12));
+  ui.rText.style.top = `${tTop}px`;
+  // 원래 높이 상한(화면 높이 − 290px)은 그대로 두고, 그보다 조작 패널이 가까우면 패널 위 12px까지만. offsetTop: 올라오는 움직임(transform)과 상관없는 최종 위치
+  ui.rText.style.maxHeight = `${Math.max(160, Math.round(Math.min(innerHeight - 290, ui.reader.offsetTop - 12 - tTop)))}px`;
+  const r = ui.rText.getBoundingClientRect(), x = $('rX');
+  x.style.top = `${Math.round(r.top + 12)}px`;
+  x.style.right = `${Math.round(innerWidth - r.right + 12 + (ui.rText.offsetWidth - ui.rText.clientWidth))}px`;
+};
+new MutationObserver(() => { requestAnimationFrame(placeX); setTimeout(placeX, 600); }).observe(ui.reader, { attributes: true, attributeFilter: ['class'] });   // 패널이 올라오는 움직임(0.5초)이 끝난 뒤 한 번 더
+addEventListener('resize', placeX);
 ui.rLarge.addEventListener('click', () => {
   const on = ui.reader.classList.toggle('large');
   ui.rLarge.setAttribute('aria-pressed', on);
@@ -1060,8 +1267,9 @@ function updateFocus(dt) {
     target = focusDist;
   } else target = focusDist;
   post.setFocus(target, dt);
-  post.setAperture(active ? 0.0012 : 0);   // 둘러볼 때는 흐림 없이, 읽을 때만 배경을 살짝 흐린다
+  post.setAperture(active && !active.inPlace ? 0.0012 : 0);   // 2.0 최종(3차): 제자리 펼침은 흐림 없이   // 둘러볼 때는 흐림 없이, 읽을 때만 배경을 살짝 흐린다
   post.setReading(!!active);
+  audio.setReading(!!active && state.is(S.BOOK_OPENING, S.BOOK_READING, S.OBJECT_SELECTED));
 }
 
 // 문 앞 유혹 효과: 마지막 입력 후 10초
@@ -1070,7 +1278,7 @@ for (const l of lamps) { l.userData.base = l.intensity; l.userData.color = l.col
 const LAMP_NIGHT = new THREE.Color('#FFD9A0');
 const SUN_DAY = new THREE.Color('#FFFAF0'), SUN_WARM = new THREE.Color('#FFC89A');   // 노을빛은 아이보리를 해치지 않을 만큼만
 const SKY_DAY = new THREE.Color('#FFFDF6'), SKY_NIGHT = new THREE.Color('#AEB8D6');
-const GND_DAY = new THREE.Color('#EFE6D4'), GND_NIGHT = new THREE.Color('#6F6A62');
+const GND_DAY = new THREE.Color('#EADFC9'), GND_NIGHT = new THREE.Color('#857D72');
 const BG_DAY = new THREE.Color(COLORS.ivory), BG_NIGHT = new THREE.Color('#2F3442');
 const FOG_DAY = new THREE.Color('#F6F1E6'), FOG_NIGHT = new THREE.Color('#5A5E6A');
 const HOUR = hourOverride();
@@ -1083,6 +1291,15 @@ const modeBtns = [...document.querySelectorAll('.daymode [data-mode]')];
 const PART = { morning: '아침', day: '낮', dusk: '해 질 녘', dawn: '해 뜰 녘', night: '밤' };
 const sky = { hemi: HEMI, sun: SUN, roomSun: roomSun.intensity, door: 1, exposure: 0.94, day: 0, environment: scene.environmentIntensity };
 const ROOM_SUN = roomSun.intensity;
+// 2026-11-11: 밤에 셸프 책 표지·진열 페이지가 어둡게 가라앉던 것 — 그림(emissiveMap)이 있는 표지·페이지 재질은 밤일수록 스스로 조금 더 밝힌다(글자 대비는 그림 그대로)
+const nightDisplayMats = [];
+{
+  const seen = new Set();
+  const take = (root) => root.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (m && m.emissiveMap && !seen.has(m)) { seen.add(m); m.userData.emBase = m.emissiveIntensity; nightDisplayMats.push(m); } });
+  for (const o of room.openables) { if (o.kind !== 'package') take(o.group); if (o.pageCard) take(o.pageCard); }
+  // rev6-6: 패키지 인쇄면도 밤에만 조금 스스로 밝게(밤에 Ch2가 너무 어두웠다). 낮 값은 그대로
+  for (const o of room.openables) if (o.kind === 'package') o.group.traverse((m) => { if (m.isMesh) for (const mt of [].concat(m.material)) if (mt && !seen.has(mt) && (mt.emissiveMap || mt.emissiveIntensity > 0)) { seen.add(mt); mt.userData.emBase = mt.emissiveIntensity; mt.userData.emNight = 0.2; nightDisplayMats.push(mt); } });
+}
 function applyDaylight() {
   const now = new Date();
   const d = daylight(now, dayMode === 'auto' ? HOUR : MODE_HOUR[dayMode]);
@@ -1098,34 +1315,44 @@ function applyDaylight() {
   // 실내 햇빛(왼쪽 아치 창): 아침에 가장 많이, 해 질 녘엔 붉게, 밤엔 꺼짐
   roomSun.color.copy(SUN_DAY).lerp(SUN_WARM, d.warm);
   roomSun.position.y = 2.6 + h * 7;
-  sky.roomSun = ROOM_SUN * d.day * (1.35 + 0.45 * d.morning * d.day);
+  // 2026-11-10 노출 수정: 아침 창 햇빛이 9.5(거리 감쇠 없음)까지 올라 셸프 오른쪽 페이지 카드의 글자가 흰색으로 날아가고 초록이 세이지로 바랬다.
+  // 다른 실내 조명과 균형 맞는 값으로(한낮 ≈2.6, 아침 ≈3.1). 방향 있는 햇빛과 그림자는 그대로 남는다
+  sky.roomSun = ROOM_SUN * d.day * (0.5 + 0.09 * d.morning * d.day);
   roomSun.intensity = sky.roomSun;
-  sky.hemi = HEMI * (0.3 + 1.05 * d.day);
+  // rev4: 낮에 모든 면을 고르게 채우던 하늘빛·반사광을 줄인다(0.55+0.8d → 0.5+0.3d). 그늘이 그늘로 남아 앞뒤가 갈린다. 밤 값은 그대로
+  // 2026-11-11: 낮이 밤처럼 어둡다는 피드백 — 하늘빛·반사광(그늘을 채우는 빛)을 올려 밝고 산뜻하게. 직접 빛(햇빛·스포트)은 그대로라 흰 종이는 다시 날아가지 않는다
+  sky.hemi = HEMI * (0.5 + 0.85 * d.day);   // 2026-11-11(3): 고르게 채우는 빛을 줄이고 노출을 올려 깊이감(그늘)은 살리고 전체는 밝게 — 클라이언트 참고(rev4 깊이 + 더 밝게)   // 2026-11-11(2): 클라이언트 낮 참고(밝은 아이보리 하이키) — 하늘빛 ×1.8. 빛 받은 초록 #506246·라벤더 #b8a5c6(브랜드 #4F5F4C·#C1B1D1)
   hemi.color.copy(SKY_DAY).lerp(SKY_NIGHT, n);
   hemi.groundColor.copy(GND_DAY).lerp(GND_NIGHT, n);
-  sky.environment = 0.38 * (0.35 + 0.9 * d.day);
+  sky.environment = 0.38 * (0.35 + 0.68 * d.day);   // 2026-11-11: 낮 반사광은 하늘빛보다 덜 올린다(위에서 고르게 비춰 패키지 윗면이 평평하게 떴다)   // rev4: 0.9 → 0.4 (낮 환경광이 그림자를 지우던 것)
   scene.environmentIntensity = sky.environment;
   scene.background.copy(BG_DAY).lerp(BG_NIGHT, n);
   scene.fog.color.copy(FOG_DAY).lerp(FOG_NIGHT, n * 0.7);
   // 인공 조명: 밤일수록 더 밝고 따뜻하게
-  for (const l of lamps) { l.intensity = l.userData.base * (1 + 0.7 * n); l.color.copy(l.userData.color).lerp(LAMP_NIGHT, n * 0.6); }
+  for (const l of lamps) { l.userData.cur = l.userData.base * (1 + 0.7 * n); l.color.copy(l.userData.color).lerp(LAMP_NIGHT, n * 0.6); }   // 실제 세기는 루프에서 실내 조명 페이드(inK)를 곱해 넣는다
   door.setNight(n);
+  for (const m of nightDisplayMats) m.emissiveIntensity = m.userData.emBase + (m.userData.emNight ?? 0.26) * n;
   room.setNight(n);
   sky.door = 1 + 0.8 * n;
-  sky.exposure = 0.97;
+  // 2026-11-10 노출 수정: 실내 1.02 → 0.92. 1.02에서는 흰 종이·아이보리가 톤 매핑 어깨에 걸려 글자 대비가 사라졌다.
+  // 입구와 실내가 같은 노출 하나를 쓰고, 입구 쪽 보정은 아래 루프에서 작게·부드럽게만 더한다
+  sky.exposure = 1.17 - 0.19 * n;   // rev6-5b: 낮 1.06 → 1.17(회색빛 제거, 참고 이미지 밝기), 밤 0.98 그대로   // 낮 1.06(밝게, 그늘은 그대로 그늘) / 밤 0.98(그대로)   // 밤은 원래 밝기(≈0.98) 유지 — 넘치던 것은 낮의 햇빛 쪽이었다
   const part = d.day > 0.75 ? (d.morning ? 'morning' : 'day') : d.day > 0.15 ? (d.morning ? 'dawn' : 'dusk') : 'night';
   ui.app.dataset.daypart = part;
   // 지금 시각 + 조명 상태(실시간이 아니면 고른 모드)
   const hh = now.getHours(), mm = String(now.getMinutes()).padStart(2, '0');
   const clock = `${hh < 12 ? '오전' : '오후'} ${hh % 12 || 12}:${mm}`;
-  $('dmClock').textContent = dayMode === 'auto' ? `${clock} · ${PART[part]}` : clock;
+  // 2026-11-11: '오후 1:07 · 밤'이 네 번째 선택지처럼 보였다 → 시계는 시각만, 지금 시간대는 '실시간' 버튼 안에 함께
+  $('dmClock').textContent = clock;
+  const autoBtn = modeBtns.find((b) => b.dataset.mode === 'auto');
+  if (autoBtn) autoBtn.textContent = dayMode === 'auto' ? `실시간 · ${PART[part]}` : '실시간';
   modeBtns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === dayMode)));
 }
 modeBtns.forEach((b) => b.addEventListener('click', () => {
   dayMode = b.dataset.mode;
   try { localStorage.setItem('hirang-daymode', dayMode); } catch (e) { /* 저장소 없음 */ }
   applyDaylight();
-  announce(`${b.textContent} 조명으로 바꿨습니다`);
+  announce(`${b.dataset.mode === 'auto' ? '실시간' : b.textContent} 조명으로 바꿨습니다`);
 }));
 applyDaylight();
 setInterval(applyDaylight, 30 * 1000);   // 30초마다 해 위치·시계를 다시 계산
@@ -1133,6 +1360,9 @@ setInterval(applyDaylight, 30 * 1000);   // 30초마다 해 위치·시계를 �
 const IDLE_RETURN_MS = 60000;
 const LURE_DELAY = 7000;   // 문 앞에서 7초 동안 움직임이 없으면 빛이 새어 나온다
 let lastInput = performance.now(), lure = 0, frameNo = 0;
+// 2026-11-10 노출 수정: 문 앞 보정(entK)과 실내 조명(inK)을 한 프레임에 바꾸지 않고 천천히 넘긴다.
+// 전에는 문을 누르는 순간 노출 0.85→1.02, 햇빛 +39%, 하늘빛 +18%, 실내 조명 11개가 같은 프레임에 켜져 화면 밝기가 한 번에 12% 뛰었다
+let entK = 1, inK = 0;
 ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => addEventListener(ev, () => { lastInput = performance.now(); }, { passive: true }));
 
 const clock = new THREE.Clock();
@@ -1142,7 +1372,8 @@ const clock = new THREE.Clock();
 let revealed = false;   // 로더가 걷힌 뒤부터 FPS를 판단한다
 // up: 이만큼 여유가 있으면 한 단계 선명하게. 휴대폰은 60Hz에서 52fps를 5초 넘기기 어려워 한번 흐려지면 돌아오지 않던 문제가 있어 45로 낮춘다
 // graceUntil: 처음 화면이 뜬 직후·조명 구역이 바뀐 직후는 원래 잠깐 느리므로 그동안은 품질을 판단하지 않는다(괜히 흐려지지 않게)
-const perf = { target: coarse ? 30 : 55, up: coarse ? 45 : 58.5, graceUntil: 0, acc: 0, n: 0, slow: 0, fast: 0, last: performance.now(), fps: 0, ceiling: 0, raisedAt: -1e9, log: [] };
+const perf = { target: coarse ? 30 : 45, up: coarse ? 45 : 56,   // 2026-11-11: 데스크톱 55 → 45(60Hz 화면의 순간 흔들림에 화질을 내리지 않게)
+  graceUntil: 0, acc: 0, n: 0, slow: 0, fast: 0, last: performance.now(), fps: 0, ceiling: 0, raisedAt: -1e9, log: [] };
 function govern(now) {
   const ms = now - perf.last; perf.last = now;
   // 탭 전환·멈춤(1초 이상)만 계산에서 뺀다. 느린 기기의 긴 프레임(0.25초 등)은 그대로 세야 품질을 내릴 수 있다
@@ -1171,44 +1402,53 @@ function govern(now) {
   } else perf.slow = perf.fast = 0;
 }
 
-renderer.setAnimationLoop(() => {
+const loop = () => {
   govern(performance.now());
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   // 문 앞에서는 대기하고 내부에서 1분간 입력이 없으면 문 앞부터 다시 시작한다.
-  if (performance.now() - lastInput >= IDLE_RETURN_MS && !state.is(S.INITIAL, S.DOOR_HOVER)) {
-    lastInput = performance.now();
-    location.replace('index.html');
-    return;
-  }
+  // 2.0 최종: 책·패키지를 펼쳐 읽는 동안에는 입력이 없어도 문 앞으로 되돌리지 않는다(천천히 읽는 사람을 쫓아내지 않게)
+  const readingNow = state.is(S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING);
+  if (readingNow) lastInput = Math.max(lastInput, performance.now() - IDLE_RETURN_MS * 0.5);
+  // rev5: 입력이 없어도 문 앞으로 되돌리지(새로고침하지) 않는다. 방을 나가는 것은 관람객이 직접 나갈 때뿐
+  // 2.0 최종: 문을 지나 들어오는 동안에는 관람객을 숨긴다(화면 가장자리에 머리가 불쑥 보이던 문제). 도착 시점엔 화면 밖에 있다
+  people.setVisible(!state.is(S.INITIAL, S.DOOR_HOVER, S.DOOR_OPENING, S.CAMERA_ENTERING, S.LEAVING));
+  if (lastInput > arrivedAt + 50 && state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER, S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING, S.RETURN_TO_ROOM)) people.setActive(true);
   rig.update(dt, !state.allows('look') || asking);
   // 문: 열림 각도 + 호버 시 살짝 벌어짐 + 손잡이
   // 문 앞에서 7초 넘게 머뭇거리면 방 안의 빛이 문틈을 뚫고 새어 나온다(움직이면 잦아든다)
   const atDoor = state.is(S.INITIAL, S.DOOR_HOVER);
   const lureT = atDoor && !reduced && performance.now() - lastInput > LURE_DELAY ? 1 : 0;
-  lure += (lureT - lure) * (1 - Math.exp(-(lureT ? 1.2 : 4) * dt));
+  // 2026-11-11: 문을 누르면 머뭇거림 빛은 0.15초 안에 사라진다(문 뒤 밝은 판·바닥 금빛이 열리는 틈으로 노랗게 튀던 것)
+  lure += (lureT - lure) * (1 - Math.exp(-(lureT ? 1.2 : atDoor ? 4 : 18) * dt));
   // 깜빡임 대신 숨 쉬듯 천천히 밝아졌다 잦아드는 빛(사이렌처럼 번쩍이지 않게)
   const flick = 0.5 + 0.35 * Math.sin(t * 1.1) + 0.15 * Math.sin(t * 2.7 + 1.3);
-  const lureAjar = lure * (0.045 + 0.025 * Math.sin(t * 0.8));
+  const lureAjar = lure * (0.07 + 0.03 * Math.sin(t * 0.8));   // 2026-11-11: 틈을 조금 더 벌려 안쪽 빛이 분명히 새어 나오게
   // 유혹하는 동안 바깥은 살짝 어두워져 문틈의 빛이 도드라진다
   // 낮의 입구만 주변광을 눌러 초록 문·몰딩·벽등의 명암을 확보한다.
   // 실내에 들어가면 원래의 낮 조명으로 돌아온다. 밤 조명 계수는 그대로다.
-  const entranceDay = atDoor ? sky.day : 0;
+  const dampK = 1 - Math.exp(-1.6 * dt);   // 약 1.5초에 걸쳐 넘어간다(문이 열리는 시간과 같은 길이)
+  // 문 앞 보정은 카메라가 문턱(z≈0)을 지나 방 안에 들어선 뒤에야 풀린다 → 문이 열리는 동안 바깥 벽·문 밝기가 그대로다(바깥은 그때 화면 밖)
+  entK += ((camera.position.z > 0 ? 1 : 0) - entK) * dampK;
+  inK += ((atDoor ? 0 : 1) - inK) * dampK;
+  for (const l of lamps) l.intensity = (l.userData.cur ?? l.userData.base) * inK;
+  const entranceDay = sky.day * entK;
   const entranceGlow = Math.max(lure, entranceDay * 0.22);
-  hemi.intensity = sky.hemi * (1 - 0.35 * lure) * (1 - 0.15 * entranceDay);
-  sun.intensity = sky.sun * (1 - 0.4 * lure) * (1 - 0.28 * entranceDay);
-  scene.environmentIntensity = sky.environment * (1 - 0.18 * entranceDay);
-  renderer.toneMappingExposure = sky.exposure - 0.1 * lure - 0.12 * entranceDay;
-  post.setGlow(lure * 0.55);
+  hemi.intensity = sky.hemi * (1 - (0.3 + 0.22 * sky.day) * lure) * (1 - 0.15 * entranceDay);   // 2026-11-11: 머뭇거림 빛 동안 주변을 조금 더 눌러 빛이 분명히 보이게(0.18 → 0.3)
+  sun.intensity = sky.sun * (1 - (0.35 + 0.25 * sky.day) * lure) * (1 - 0.28 * entranceDay);
+  scene.environmentIntensity = sky.environment * (1 - 0.18 * entranceDay) * (1 - (0.3 + 0.22 * sky.day) * lure);
+  renderer.toneMappingExposure = sky.exposure - (0.05 + 0.07 * sky.day) * lure;   // rev6-6: 낮 머뭇거림 때 주변을 밤처럼 한 단계 더 눌러 문 빛이 대비로 보이게   // rev6-5: 벽 자체 발광을 줄인 만큼 낮 입구 노출을 내리지 않는다(−0.06 → 0)   // 낮 입구 보정 0.12 → 0.06(실내와의 차이를 줄임), entK로 부드럽게
+  post.setGlow(lure * 0.3);   // 2.0 최종: 문틈 빛 번짐 절제
   door.setAngle(doorFx.open + doorFx.ajar + lureAjar);
   // 초록 문짝은 밖에서 볼 때만: 방 안(벽 안쪽)에 들어서면 열린 문짝이 화면을 덮지 않게 숨긴다
   door.setLeafVisible(camera.position.z > -0.05);
   door.setHandle(doorFx.handle);
-  door.updateLure(entranceGlow, t, flick);
+  door.updateLure(entranceGlow, t, flick, lure);
   ui.doorHint.classList.toggle('lure', lure > 0.3);
   const breathe = reduced ? 0 : Math.sin(t * 0.8) * 0.06;
-  door.spillMat.opacity = Math.min(1, doorFx.light * 0.3 + (doorFx.ajar / DOOR.hoverAjar) * 0.08 + 0.04 + breathe * 0.15 + lure * (0.95 + flick * 0.15));
+  door.spillMat.opacity = Math.min(1, doorFx.light * 0.3 + (doorFx.ajar / DOOR.hoverAjar) * 0.08 + 0.04 + breathe * 0.15 + lure * (0.75 + flick * 0.1));
   doorLight.intensity = (2.6 + doorFx.light * 4 + breathe * 2) * sky.door * (1 - 0.6 * lure);
+  // 햇빛 무늬: 낮일수록(해가 있을 때) 보이고, 아주 천천히 옆으로 흐른다(약 90초 주기)
   room.update(t, dt, reduced);
   people.update(t, dt, reduced);
   exitAtDoor();
@@ -1219,6 +1459,12 @@ renderer.setAnimationLoop(() => {
   // 그림자는 몇 프레임에 한 번만 갱신(움직이는 건 관람객뿐이라 눈에 띄지 않는다). 간격은 품질 단계가 정한다
   renderer.shadowMap.needsUpdate = frameNo++ % post.shadowEvery === 0;
   post.render(t);
+};
+renderer.setAnimationLoop(loop);
+// 2.0 최종 성능: 탭이 보이지 않으면 렌더 루프를 완전히 멈추고, 돌아오면 시계를 이어 붙인다(긴 dt로 튀지 않게)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) renderer.setAnimationLoop(null);
+  else { clock.getDelta(); perf.last = performance.now(); renderer.setAnimationLoop(loop); }
 });
 
 if (returning) enterRoomDirect();
@@ -1295,6 +1541,6 @@ window.__hirang = {
   closeBook: () => ui.rClose.click(), openables: room.openables.map((o) => o.label),
   spread: () => active?.spread, camera, door: doorFx, rig,
   project(o3d) { const v = o3d.getWorldPosition(new THREE.Vector3()).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; },
-  renderer, post, scene, perf,
-  objects: room.openables, doorMesh: door.hit[0], insp, pkgGo, pkgStep, exitRoom, people, setIdle: (ms) => { lastInput = performance.now() - ms; },
+  renderer, post, scene, perf, mergeInfo, texCap, audio,
+  objects: room.openables, doorMesh: door.hit[0], entryTl: () => entryTl, lastStop: () => lastStop, stopMove, insp, pkgGo, pkgStep, exitRoom, people, setIdle: (ms) => { lastInput = performance.now() - ms; },
 };

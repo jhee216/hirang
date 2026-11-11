@@ -59,6 +59,14 @@ function toTex(canvas, { mirror = false } = {}) {
   return t;
 }
 
+// 2026-11-11: 글자·디자인이 큰 화면·가까이에서 뭉개지지 않게 표지·이름판·칸은 2배 해상도로 그린다(그리는 좌표는 그대로)
+function canvasHi(w, h, ss = 2) {
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * ss); c.height = Math.round(h * ss);
+  const x = c.getContext('2d');
+  x.scale(ss, ss);
+  return [c, x];
+}
 function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
@@ -101,15 +109,23 @@ export function plaqueTexture() {
   const W = 1600, H = 380;
   const [c, x] = canvas(W, H);
   x.clearRect(0, 0, W, H);
-  drawLogo(x, 'sym', COLORS.moss, 165, H / 2, 260);
+  // 2026-11-11: 명판 왼쪽 심볼은 뺀다(클라이언트 요청 — 심볼은 문짝에). 글자 위치는 그대로
   x.textAlign = 'left'; x.textBaseline = 'middle';
   x.fillStyle = COLORS.ink;
   let fs = 108;
   do { x.font = `800 ${fs}px ${FONTS.en}`; fs -= 2; } while (x.measureText('SECRET READING ZONE').width > W - 365 && fs > 60);   // 캔버스 안에 다 들어오게
-  x.fillText('SECRET READING ZONE', 345, H * 0.4);
+  // 2026-11-11 검수: 심볼을 뺀 뒤 왼쪽 345px가 빈 채로 남아 글자 묶음이 명판 오른쪽으로 치우쳤다(문 위에 놓이면 문 가운데에서 어긋남)
+  // → 두 줄 묶음을 명판 가운데에 놓는다. 두 줄의 왼쪽 선은 그대로 맞춘다
+  const enW = x.measureText('SECRET READING ZONE').width;
+  const enFont = x.font;
+  x.font = `700 66px ${FONTS.ko}`;
+  const koW = x.measureText('비밀독서구역 하이랑').width;
+  const x0 = Math.round((W - Math.max(enW, koW)) / 2);
+  x.font = enFont;
+  x.fillText('SECRET READING ZONE', x0, H * 0.4);
   x.fillStyle = COLORS.moss;
   x.font = `700 66px ${FONTS.ko}`;
-  x.fillText('비밀독서구역 하이랑', 349, H * 0.72);
+  x.fillText('비밀독서구역 하이랑', x0 + 4, H * 0.72);
   return toTex(c);
 }
 
@@ -207,7 +223,7 @@ export function bookCover(book) {
 }
 function drawBookCover(book) {
   const W = 740, H = 1050;
-  const [c, x] = canvas(W, H);
+  const [c, x] = canvasHi(W, H);
   paper(x, W, H, book.color);
   const deep = shade(book.color, -0.5);
   // 책등 쪽 모스 그린 띠(영상 초안의 책처럼 짙은 그린 책등이 표지로 살짝 감긴다)
@@ -234,7 +250,7 @@ function drawBookCover(book) {
 /* ---------- 전시 이름판 ---------- */
 
 export function plateTexture(label) {
-  const [c, x] = canvas(800, 120);
+  const [c, x] = canvasHi(800, 120);
   x.fillStyle = COLORS.moss; x.beginPath(); x.roundRect(0, 0, 800, 120, 18); x.fill();
   x.fillStyle = COLORS.ivory; x.textAlign = 'center'; x.textBaseline = 'middle';
   x.font = `600 50px ${FONTS.ko}`;
@@ -245,7 +261,7 @@ export function plateTexture(label) {
 /* ---------- '큐레이션' 보드 ---------- */
 
 export function boardTitleTexture() {
-  const [c, x] = canvas(900, 160);
+  const [c, x] = canvasHi(900, 160);
   x.fillStyle = COLORS.ink; x.textAlign = 'center'; x.textBaseline = 'middle';
   x.font = `700 72px ${FONTS.ko}`;
   x.fillText('큐레이션', 450, 70);
@@ -255,7 +271,7 @@ export function boardTitleTexture() {
 
 // 큐레이션 색 그대로의 칸 + 가운데 이름. 조명에 색이 바래지 않도록 같은 그림으로 자체 발광시킨다
 export function curationTileMaterial(b) {
-  const [c, x] = canvas(360, 360);
+  const [c, x] = canvasHi(360, 360);
   x.fillStyle = b.color; x.fillRect(0, 0, 360, 360);
   x.fillStyle = shade(b.color, -0.06); x.fillRect(0, 300, 360, 60);
   x.fillStyle = COLORS.ink; x.textAlign = 'center'; x.textBaseline = 'middle';
@@ -264,7 +280,7 @@ export function curationTileMaterial(b) {
   x.fillStyle = shade(b.color, -0.45); x.font = `500 24px ${FONTS.ko}`;
   x.fillText(b.genre, 180, 330);
   const t = toTex(c);
-  return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#FFFFFF', emissiveIntensity: 0.55, color: '#BDBDBD', roughness: 0.7 });
+  return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#FFFFFF', emissiveIntensity: 0.3, color: '#CFCFCF', roughness: 0.7 });   // 2026-11-11: 발광 0.55 → 0.3(바램)
 }
 
 /* ---------- 페이지 ---------- */
@@ -332,6 +348,9 @@ export function pageTextures(def, n, aspect, accent, label = 'HIRANG SECRET PREV
     x.font = `400 30px ${FONTS.ko}`; x.fillStyle = COLORS.muted;
     let ny = H - 260;
     for (const l of wrap(x, def.note, W - BODY.side * 2)) { x.fillText(l, BODY.side, ny); ny += 48; }
+  } else if (def.type === 'onepage' && def.id) {
+    // 2026-11-11: 책 속 한 페이지 = 클라이언트 소개글 페이지 원본(assets/site/intro/{id}.webp, 1400px). 받는 동안은 종이만
+    def._img = true;
   } else if (def.type === 'onepage') {
     // 책 속 한 페이지: 나누지 않고 한 장에 전부 들어가도록 글자 크기를 맞춘다
     const side = 84, top = 128, bottom = 132, maxW = W - side * 2;
@@ -366,6 +385,20 @@ export function pageTextures(def, n, aspect, accent, label = 'HIRANG SECRET PREV
   const front = toTex(c);
   const back = front.clone();
   back.repeat.x = -1; back.offset.x = 1; back.needsUpdate = true;
+  if (def._img) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => {
+      // 페이지 번호 줄(아래 120px)은 남기고 그 위 영역에 원본 비율 그대로 맞춰 넣는다
+      const padX = 36, padT = 36, padB = 128;
+      const bw = W - padX * 2, bh = H - padT - padB;
+      const sc = Math.min(bw / img.naturalWidth, bh / img.naturalHeight);
+      const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
+      x.drawImage(img, (W - dw) / 2, padT + (bh - dh) / 2, dw, dh);
+      front.needsUpdate = true; back.needsUpdate = true;
+    };
+    img.src = `../assets/site/intro/${def.id}.webp`;
+  }
   return { front, back };
 }
 
@@ -389,19 +422,20 @@ export function woodFloor(rx, ry) {
     let px = -Math.random() * S * 0.5;
     while (px < S) {
       const len = S * (0.35 + Math.random() * 0.4);
-      const l = 80 + Math.random() * 10, base = `hsl(36, ${30 + Math.random() * 10}%, ${l}%)`;
+      // 2.0 최종: F2 참고안처럼 판 색 차이를 줄인 크림빛 무광 마루(판 무늬가 시선을 끌지 않게)
+      const l = 85 + Math.random() * 3.5, base = `hsl(38, ${24 + Math.random() * 6}%, ${l}%)`;
       x.fillStyle = base; x.fillRect(px, r * PW, len, PW);
       // 나뭇결
       for (let k = 0; k < 18; k++) {
-        x.strokeStyle = `rgba(150,110,60,${0.04 + Math.random() * 0.06})`; x.lineWidth = 1 + Math.random() * 2;
+        x.strokeStyle = `rgba(150,110,60,${0.015 + Math.random() * 0.03})`; x.lineWidth = 1 + Math.random() * 2;
         const gy = r * PW + Math.random() * PW;
         x.beginPath(); x.moveTo(px, gy); x.bezierCurveTo(px + len * 0.3, gy + (Math.random() - 0.5) * 8, px + len * 0.7, gy + (Math.random() - 0.5) * 8, px + len, gy); x.stroke();
       }
-      y.fillStyle = '#3a3a3a'; y.fillRect(px - 1, r * PW, 3, PW);   // 판 끝 이음
+      y.fillStyle = '#7a7a7a'; y.fillRect(px - 1, r * PW, 3, PW);   // 판 끝 이음
       px += len;
     }
-    x.fillStyle = 'rgba(90,70,40,0.35)'; x.fillRect(0, r * PW, S, 2);
-    y.fillStyle = '#3a3a3a'; y.fillRect(0, r * PW - 1, S, 3);         // 판 사이 홈
+    x.fillStyle = 'rgba(90,70,40,0.14)'; x.fillRect(0, r * PW, S, 2);
+    y.fillStyle = '#7a7a7a'; y.fillRect(0, r * PW - 1, S, 3);         // 판 사이 홈
   }
   return { map: repeatTex(c, rx, ry), bump: repeatTex(b, rx, ry, false) };
 }
@@ -430,4 +464,73 @@ export function polishedFloor(rx, ry) {
     x.beginPath(); x.ellipse(Math.random() * S, Math.random() * S, 30 + Math.random() * 90, 20 + Math.random() * 60, Math.random() * 3, 0, 7); x.fill();
   }
   return repeatTex(c, rx, ry);
+}
+
+/* ---------- 2.0 최종(3차): 진열용 '책 속 한 페이지' — 브랜드 영상의 페이지 카드와 같은 디자인 ---------- */
+// 흰 종이 + 위·아래 라벤더 물결 띠, 큐레이션 이름(라벤더)·장르, 본문, 오른쪽 아래 hirang 워드마크.
+// 본문은 이번 주 원고(books-data.js ← weekly-sets.js, 웹사이트와 같은 원문)를 그대로 조판한다(지어낸 글 없음).
+// 영상의 page_XX.png(1537×2319)와 같은 비율. 큐레이션마다 하나만 만들어 셸프·공간의 종이가 함께 쓴다.
+const displayPageCache = new Map();
+// 2026-11-11: 클라이언트 페이지 원본(소개글1–9.png, 3535×5407 안팎) 비율
+export const DISPLAY_PAGE_ASPECT = 5407 / 3535;
+export function displayPageTexture(book) {
+  if (displayPageCache.has(book.id)) return displayPageCache.get(book.id);
+  const W = 512, H = Math.round(W * DISPLAY_PAGE_ASPECT), side = 30;
+  const [c, x] = canvas(W, H);
+  paper(x, W, H, '#FFFFFF');
+  // rev4(2026-11-10): 페이지 띠·이름·워드마크를 그 책의 큐레이션 색(BOOKS.color, 웹사이트 원본 데이터와 동일)에서 가져온다.
+  // 전에는 아홉 장 모두 라벤더였다 → 01 첫 장(#F6EFE4) 옆 페이지가 라벤더로 보이는 등 책·페이지 색이 어긋났다.
+  // 색을 고르는 규칙은 표지(bookCover)와 같다: 바탕=원색, 테두리=−12%, 글자=−50%. 본문(원문)은 손대지 않는다.
+  const tone = book.color, edge2 = shade(book.color, -0.12), deep = shade(book.color, -0.5);
+  // 물결 띠: 바깥 가장자리는 곧게, 안쪽 가장자리는 반원 물결
+  const band = (y0, dir) => {
+    const bh = 20, r = 9.5, n = Math.floor(W / (r * 2));
+    const step = W / n;
+    x.fillStyle = tone;
+    x.beginPath();
+    const edge = dir > 0 ? y0 : y0 + bh;           // 곧은 바깥 가장자리
+    const inner = dir > 0 ? y0 + bh : y0;          // 물결 안쪽 가장자리
+    x.moveTo(0, edge); x.lineTo(W, edge); x.lineTo(W, inner);
+    for (let k = n - 1; k >= 0; k--) x.arc(k * step + step / 2, inner, step / 2, 0, Math.PI, dir < 0);
+    x.closePath(); x.fill();
+    x.strokeStyle = edge2; x.lineWidth = 1.5; x.stroke();      // 연한 큐레이션 색(01 첫 장 등)도 흰 종이 위에서 띠가 보이게 — 표지와 같은 테두리 톤
+  };
+  band(0, 1); band(H - 20, -1);
+  x.textBaseline = 'alphabetic';
+  x.fillStyle = deep; x.font = `700 24px ${FONTS.ko}`;
+  x.fillText(book.name, side, 64);
+  const nw = x.measureText(book.name).width;
+  x.fillStyle = COLORS.muted; x.font = `500 13px ${FONTS.ko}`;
+  x.fillText(book.genre, side + nw + 10, 63);
+  x.fillStyle = COLORS.ink; x.font = `400 13.2px ${FONTS.ko}`;
+  const lh = 22.4;
+  let y = 94;
+  for (const l of wrap(x, book.fullPage, W - side * 2)) {
+    if (y > H - 62) break;                 // 한 장에 들어가는 만큼(원문 앞부분 그대로)
+    if (l) x.fillText(l, side, y);
+    y += l ? lh : lh * 0.4;
+  }
+  drawLogo(x, 'word', shade(book.color, -0.3), W - side - 34, H - 40, 68);
+  const t = toTex(c);
+  // 2026-11-11: 클라이언트가 준 아홉 페이지 원본(experience/assets/goods/소개글1–9.png → assets/intro/{id}.webp)으로 바꾼다.
+  // 위의 캔버스 조판은 이미지를 받기 전 잠깐, 또는 받지 못했을 때만 보인다. 바깥(물결 가장자리 밖)은 투명 → 재질 alphaTest로 잘라 낸다
+  if (/^0[1-9]$/.test(book.id)) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { t.image = img; t.needsUpdate = true; };
+    img.src = `../assets/site/intro/${book.id}.webp`;   // 2026-11-11: 1024 → 1400px(셸프 카드 글자 선명도)
+  }
+  displayPageCache.set(book.id, t);
+  return t;
+}
+
+// rev6-5b: Higgsfield(GPT Image 2.6)로 만든 석회 미장 벽·마이크로시멘트 바닥의 '결'(범프)만 쓴다.
+// 색은 바꾸지 않는다(원래 아이보리 그대로). 원본: assets/textures-src/*-raw.png → 이음매 없이 가공한 assets/textures/*-bump.jpg
+const hfLoader = new THREE.TextureLoader();
+export function hfBump(name, rx, ry) {
+  const t = hfLoader.load(`assets/textures/${name}-bump.jpg`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.anisotropy = 8;
+  return t;
 }

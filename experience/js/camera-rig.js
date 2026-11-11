@@ -21,6 +21,11 @@ export class CameraRig {
     this.bob = 0;
     this.moving = 0;
     this.limit = (p) => p;                             // 방 경계·장애물 처리(main.js에서 지정)
+    // 2.0: 눈높이·렌즈도 목표값을 향해 천천히 바뀐다(관람 지점마다 다른 구도). fovScale = 세로 화면 배율
+    this.eye = this.tEye = CAMERA.eye;
+    this.fov = CAMERA.fov; this.tFov = CAMERA.fovIn;
+    this.fovScale = 1;
+    this.fovScaleIn = 1;   // 2.0 최종: 세로 화면에서 방 안(문턱 안쪽)일 때의 렌즈 배율. 문턱을 지나는 동안 천천히 바뀐다
     this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
     this.syncBase();
   }
@@ -43,22 +48,51 @@ export class CameraRig {
   // 걷기 시작하면 시선을 사람 눈높이의 정면으로 부드럽게 되돌린다(바닥을 내려다보며 걷지 않게)
   levelGaze() { this.tPitch = CAMERA.look.level; }
 
+  // 직접 걷기 시작하면 기본 눈높이·기본 렌즈로 돌아간다
+  resetLens() { this.tEye = CAMERA.eye; this.tFov = CAMERA.fovIn; }
+
   // 지금 보는 방향으로 dist(m)만큼 걸어간다
-  walk(dist) {
+  // rev4: 키·핀치도 휠과 같은 방식(앞서 쌓이는 거리를 lead로 제한) — 손을 떼면 곧 멈춘다
+  walk(dist) { this.nudge(dist); }
+
+  // rev4: 휠 한 눈금 = 짧은 이동. 목표는 지금 위치에서 최대 lead(m) 앞까지만 쌓인다(휠을 계속 굴려도 끝까지 미끄러져 가지 않음).
+  // 방향을 바꾸면 앞서 쌓인 이동을 버리고 새 방향으로만 움직인다.
+  nudge(dist) {
     this.levelGaze();
-    const from = this.target || this.pos;
+    this.resetLens();
     const f = this.forward();
-    this.target = this.limit(new THREE.Vector3(from.x + f.x * dist, CAMERA.eye, from.z + f.z * dist));
+    let lead = 0;
+    if (this.target) lead = (this.target.x - this.pos.x) * f.x + (this.target.z - this.pos.z) * f.z;
+    if (Math.sign(lead) !== Math.sign(dist)) lead = 0;
+    const max = CAMERA.walk.lead;
+    lead = clamp(lead + dist, -max, max);
+    this.target = this.limit(new THREE.Vector3(this.pos.x + f.x * lead, CAMERA.eye, this.pos.z + f.z * lead));
+  }
+
+  isMoving() {
+    if (this.keys.f) return true;
+    return !!this.target && Math.hypot(this.target.x - this.pos.x, this.target.z - this.pos.z) > 0.02;
+  }
+
+  // rev4: 지금 자리·지금 시선에서 즉시 멈춘다(남은 목표·회전·렌즈 변화를 모두 버림. 뒤로 튀거나 순간이동하지 않는다)
+  stop() {
+    this.target = null; this.moving = 0; this.turnRate = 0;
+    this.keys.f = 0; this.keys.t = 0;
+    this.tYaw = this.yaw; this.tPitch = this.pitch;
+    this.tEye = this.eye; this.tFov = this.fov;
   }
 
   // 지점까지 걸어가며, lookAt이 있으면 그쪽으로 천천히 고개를 돌린다
-  walkTo(point, lookAt) {
-    this.target = this.limit(new THREE.Vector3(point.x, CAMERA.eye, point.z));
+  walkTo(point, lookAt, lens) {
+    this.tEye = lens?.eye ?? CAMERA.eye;
+    this.tFov = (this.fovScaleIn !== 1 && lens?.pfov) || lens?.fov || CAMERA.fovIn;
+    this.target = this.limit(new THREE.Vector3(point.x, this.tEye, point.z));
     this.levelGaze();
     if (lookAt) {
       const d = new THREE.Vector3().subVectors(lookAt, this.target);
       this.tYaw = this.yaw + wrapPi(Math.atan2(-d.x, -d.z) - this.yaw);
-      this.tPitch = clamp(Math.atan2(d.y - CAMERA.eye, Math.hypot(d.x, d.z)), -CAMERA.look.pitch, CAMERA.look.pitch * 0.8);
+      // 2.0 버그 수정: d는 이미 '도착 지점(눈높이) → 바라볼 곳' 벡터라 눈높이를 또 빼면 안 된다(전에는 모든 관람 지점이 약 20° 더 아래를 봤다)
+      this.tPitch = clamp(Math.atan2(d.y, Math.hypot(d.x, d.z)), -CAMERA.look.pitch, CAMERA.look.pitch * 0.8);
     }
   }
 
@@ -89,7 +123,10 @@ export class CameraRig {
           this.bob += step * 7.5;
         }
       } else this.moving *= 0.9;
-      this.pos.y = CAMERA.eye;
+      const kl = 1 - Math.exp(-CAMERA.lens.damping * dt);
+      this.eye += (this.tEye - this.eye) * kl;
+      this.fov += (this.tFov - this.fov) * kl;
+      this.pos.y = this.eye;
       const k = 1 - Math.exp(-CAMERA.look.damping * dt);
       this.yaw += (this.tYaw - this.yaw) * k;
       this.pitch += (this.tPitch - this.pitch) * k;
@@ -97,6 +134,9 @@ export class CameraRig {
       const bobAmt = Math.min(1, this.moving / CAMERA.walk.speed) * CAMERA.walk.bob;
       this.camera.position.set(this.pos.x, this.pos.y + Math.sin(this.bob) * bobAmt, this.pos.z);
     }
+    const kIn = clamp((0.2 - this.camera.position.z) / 0.7, 0, 1);
+    const f = this.fov * (this.fovScale + (this.fovScaleIn - this.fovScale) * kIn * kIn * (3 - 2 * kIn));
+    if (Math.abs(this.camera.fov - f) > 1e-4) { this.camera.fov = f; this.camera.updateProjectionMatrix(); }
     this.euler.set(this.pitch, this.yaw, 0);
     this.camera.quaternion.setFromEuler(this.euler);
   }

@@ -48,10 +48,10 @@ export class Openable {
     this.openP = 0;
 
     // 큐레이션 색이 조명에 바래 비슷해 보이지 않도록, 표지·몸체는 같은 색으로 자체 발광을 섞는다
-    const bodyMat = new THREE.MeshStandardMaterial({ color: this.body, emissive: this.body, emissiveIntensity: 0.38, roughness: 0.78, metalness: 0 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: this.body, emissive: this.body, emissiveIntensity: 0.18, roughness: 0.78, metalness: 0 });   // 2026-11-11: 0.38 → 0.18(조명 위 자체 발광이 표지를 바래게 했다)
     const innerMat = new THREE.MeshStandardMaterial({ color: COLORS.ivory, roughness: 0.9 });
     const coverMats = [bodyMat, bodyMat, bodyMat, bodyMat,
-      new THREE.MeshStandardMaterial({ map: this.coverTex, emissiveMap: this.coverTex, emissive: '#FFFFFF', emissiveIntensity: 0.5, color: '#C4C4C4', roughness: 0.72 }), innerMat];
+      new THREE.MeshStandardMaterial({ map: this.coverTex, emissiveMap: this.coverTex, emissive: '#FFFFFF', emissiveIntensity: 0.18, color: '#D2D2D2', roughness: 0.72 }), innerMat];   // 2026-11-11: 발광 0.5 → 0.18, 반사율 0.55 → 0.64
     const edgeMat = new THREE.MeshStandardMaterial({ map: pageEdgeTexture(), roughness: 0.95 });
 
     // 뒤표지(패키지 바닥판)
@@ -79,7 +79,7 @@ export class Openable {
     this.pw = pw; this.ph = ph;
     const planeGeo = new THREE.PlaneGeometry(pw, ph);
     // 페이지는 어느 방향을 보든 읽혀야 하므로 같은 이미지를 약하게 자체 발광시킨다
-    const pageMat = (o = {}) => new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92, emissive: '#ffffff', emissiveIntensity: 0.16, ...o });
+    const pageMat = (o = {}) => new THREE.MeshStandardMaterial({ color: new THREE.Color(0.15, 0.15, 0.15), roughness: 0.92, emissive: '#ffffff', emissiveIntensity: 0.64, ...o });   // 2026-11-11: 펼친 페이지는 진열 화면처럼 스스로 밝고 조명은 조금만 받는다 — 셸프 스포트·햇빛·반사광이 겹쳐 글자·소개글 디자인이 하얗게 날아가던 것(측정)   // 2026-11-11: 흰 1.0 + 발광 0.16 → 0.66 + 0.05(펼친 페이지 글자·소개글 디자인이 하얗게 날아가던 것)
     this.leftMat = pageMat();
     this.rightMat = pageMat();
     this.leftPage = new THREE.Mesh(planeGeo, this.leftMat);
@@ -98,8 +98,8 @@ export class Openable {
     this.flipGeo = new THREE.PlaneGeometry(pw, ph, SEG, 1);
     this.flipGeo.translate(pw / 2, 0, 0);
     this.flipBase = this.flipGeo.attributes.position.array.slice();
-    this.flipFrontMat = pageMat({ side: THREE.FrontSide, emissiveIntensity: 0.12 });
-    this.flipBackMat = pageMat({ side: THREE.BackSide, emissiveIntensity: 0.12 });
+    this.flipFrontMat = pageMat({ side: THREE.FrontSide });
+    this.flipBackMat = pageMat({ side: THREE.BackSide });
     this.flipper = new THREE.Group();
     this.flipper.position.set(0.002, 0, t - c + 0.0022);
     this.flipper.add(new THREE.Mesh(this.flipGeo, this.flipFrontMat), new THREE.Mesh(this.flipGeo, this.flipBackMat));
@@ -150,8 +150,10 @@ export class Openable {
   setOpen(p) {
     this.openP = p;
     const e = easeInOut(p);
-    this.coverPivot.rotation.y = -PI * e;
-    this.inner.position.lerpVectors(this.closedOffset, this.openOffset, e);
+    // 2.0 최종(3차): 제자리 펼침(inPlace) — 책은 선반의 그 자리에 그대로 있고, 표지만 책등을 축으로 약 108° 열린다
+    // (끝까지 젖히면 옆 책과 겹치므로). 책 몸체도 옮기지 않는다
+    this.coverPivot.rotation.y = -PI * e * (this.inPlace ? 0.6 : 1);
+    if (!this.inPlace) this.inner.position.lerpVectors(this.closedOffset, this.openOffset, e);
     const showPages = p > 0.001;
     this.leftPage.visible = showPages;
     this.rightPage.visible = showPages;

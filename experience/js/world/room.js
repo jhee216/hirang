@@ -3,14 +3,20 @@
 import * as THREE from 'three';
 import { COLORS, BOOK_SIZE, mm, LINKS, DOOR } from '../config.js';
 import { BOOKS } from '../books-data.js';
-import { archShape } from './door.js';
+import { archShape, notchedProfile } from './door.js';
 import { buildArchitecture } from './architecture.js';
 import { Openable } from './openable.js';
-import { woodFloor, plasterBump, bookCover, contactShadowTexture, boardTitleTexture, curationTileMaterial, plateTexture } from '../textures.js';
+import { sharedMat } from '../mat-cache.js';
+import { woodFloor, plasterBump, hfBump, bookCover, contactShadowTexture, boardTitleTexture, curationTileMaterial, plateTexture, displayPageTexture, DISPLAY_PAGE_ASPECT } from '../textures.js';
 
 export const ROOM = { x: 4.2, z0: -0.12, z1: -7.8, h: 4.2 };
+// 2.0 패키지 배치(구도 스터디로 확정 후보): 원래 (−1.45,−3.45)·(1.45,−3.45)·(0,−3.75)
+// Ch1·Ch2는 셸프 전경에서 화면 밖, 메인 구도에선 온전히 / Ch3는 셸프 아래 가운데 틈에
+// 2.0 최종: Ch1·Ch2를 0.3m 뒤로·0.1m 바깥으로 — 첫 실내 구도에서 받침 아래가 잘리지 않고 온전히 보이게
+export const PKG = { ch1: [-1.85, 0, -3.9], ch2: [1.85, 0, -3.9], ch3: [0, 0, -4.3] };
 
-const mat = (color, rough = 0.9, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
+// 2.0: 같은 성질의 재질은 공유하고, 칠한 면은 무광으로(mat-cache.js)
+const mat = (color, rough = 0.9, extra = {}) => sharedMat(color, rough, extra);
 
 function contact(w, d, opacity = 1) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
@@ -19,7 +25,7 @@ function contact(w, d, opacity = 1) {
   m.position.y = 0.002;
   return m;
 }
-let contactTex;
+let contactTex, footTex;
 
 /* ---------- 책 페이지: [표지 안쪽 + 한 줄 | 책 속 한 페이지] → [끝 | 빈 면] ---------- */
 
@@ -28,7 +34,7 @@ function bookPages(b) {
     { type: 'introquote', eyebrow: `HIRANG SECRET PREVIEW  ·  NO. ${b.id}`, swatch: b.color, title: b.name,
       meta: [b.genre], quote: b.quote,
       note: '제목·저자·표지는 봉인되어 있습니다. 책 속 한 페이지만 미리 볼 수 있습니다.' },
-    { type: 'onepage', text: b.fullPage },
+    { type: 'onepage', text: b.fullPage, id: b.id },   // 2026-11-11: 소개글 페이지 원본으로 그린다(text는 화면 낭독용)
     { type: 'end', title: '이 한 페이지에 끌렸다면', text: '제목도 작가도 모른 채, 지금 남는 문장으로 고릅니다.' },
     { type: 'blank' },
   ];
@@ -55,8 +61,8 @@ export function buildRoom({ sym, packages }) {
 
   // 실제 재질: 밝은 오크 마루(판 이음·홈 요철)와 손으로 바른 회벽. 자체 발광은 아주 조금만(빛과 그림자가 형태를 만든다)
   const wood = woodFloor(RX, D / 2);
-  const floorMat = mat('#FFFFFF', 0.72, { map: wood.map, bumpMap: wood.bump, bumpScale: 0.6, emissive: '#FFF6E4', emissiveIntensity: 0.04 });
-  const wallMat = mat(COLORS.ivory, 0.95, { bumpMap: plasterBump(4, 2), bumpScale: 0.3, emissive: COLORS.ivory, emissiveIntensity: 0.12 });
+  const floorMat = mat('#F8EEDC', 0.82, { map: wood.map, bumpMap: wood.bump, bumpScale: 0.25, emissive: '#FFF6E4', emissiveIntensity: 0.04 });
+  const wallMat = mat(COLORS.ivory, 0.95, { bumpMap: hfBump('wall', 4, 2), bumpScale: 0.5, emissive: COLORS.ivory, emissiveIntensity: 0.12 });
 
   // 바닥·천장·벽(그림자를 받고, 천장·벽은 바깥 빛을 가린다)
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(RX * 2, D), floorMat);
@@ -91,8 +97,9 @@ export function buildRoom({ sym, packages }) {
     group.add(face);
     wainscot(w, x, z0 - 0.02, Math.PI);
   }
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(dw * 2, RH - DOOR.height, 0.02), wallMat);
-  lintel.position.set(0, DOOR.height + (RH - DOOR.height) / 2, z0 - 0.01); lintel.receiveShadow = true;
+  const LT = DOOR.height + DOOR.ring + 0.01;   // rev4: 초록 테두리 꼭대기 위에서 시작(테두리를 덮지 않게)
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(dw * 2, RH - LT, 0.02), wallMat);
+  lintel.position.set(0, LT + (RH - LT) / 2, z0 - 0.01); lintel.receiveShadow = true;
   group.add(lintel);
   // 왼쪽 벽(햇빛 드는 아치 창)·안뜰·계단·떠 있는 페이지는 architecture.js
   const arch = buildArchitecture(group, ROOM);
@@ -111,39 +118,65 @@ export function buildRoom({ sym, packages }) {
   group.add(ring);
 
   // 뒷벽의 라벤더 아치 부조
-  const relief = new THREE.Mesh(new THREE.ExtrudeGeometry(archShape(4.4, 3.7), { depth: 0.04, bevelEnabled: false, curveSegments: 64 }), mat('#D9CCE4', 0.9));
+  // 2.0 최종: 평평한 판 → 실제 단이 있는 라벤더 아치 벽감. 안쪽 판(얕게) + 16cm 도드라진 아치 테두리(빛이 스치면 단 그림자)
+  const relief = new THREE.Mesh(new THREE.ExtrudeGeometry(archShape(4.4, 3.7), { depth: 0.03, bevelEnabled: false, curveSegments: 64 }), mat('#CDBFDD', 0.9));
   relief.position.set(0, 0, z1 + 0.001); relief.receiveShadow = true;
   group.add(relief);
+  const arcPts = (w, h, n = 48) => { const r = w / 2, p = [[-r, 0], [-r, h - r]]; for (let i = 1; i < n; i++) { const a = Math.PI - Math.PI * i / n; p.push([r * Math.cos(a), h - r + r * Math.sin(a)]); } p.push([r, h - r], [r, 0]); return p; };
+  const reliefRim = new THREE.Mesh(new THREE.ExtrudeGeometry(notchedProfile(arcPts(4.4, 3.7), arcPts(3.84, 3.42)),
+    { depth: 0.16, bevelEnabled: true, bevelSize: 0.015, bevelThickness: 0.015, bevelSegments: 3, curveSegments: 48 }), mat('#D9CCE4', 0.9));
+  reliefRim.position.set(0, 0, z1 + 0.002); reliefRim.castShadow = true; reliefRim.receiveShadow = true;
+  group.add(reliefRim);
 
   /* ---- 중앙: 심볼 셸프. 심볼 외곽선을 그대로 세워 깊이만 준다 ---- */
+  // 2.0 최종: 셸프·Ch3를 6cm 높이 크림 단(다이스) 위에 올린다 — 바닥과 진열을 실제 높이로 분리
+  const DAIS = 0.06;
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(1.62, 1.66, DAIS, 96), mat('#F3EAD6', 0.86, { emissive: '#FFF6E2', emissiveIntensity: 0.05 }));
+  dais.position.set(0, DAIS / 2, -4.95); dais.receiveShadow = true; dais.castShadow = true;
+  const daisRim = new THREE.Mesh(new THREE.TorusGeometry(1.625, 0.007, 8, 160), mat(COLORS.moss, 0.6));
+  daisRim.rotation.x = Math.PI / 2; daisRim.position.set(0, DAIS - 0.002, -4.95);
+  group.add(dais, daisRim);
+
   const shelf = new THREE.Group();
-  shelf.position.set(0, 0, -5.15);
+  shelf.position.set(0, DAIS, -5.15);
   group.add(shelf);
-  const SW = 2.9, FD = 0.4;
+  // 2.0 최종: 깊이 0.4 → 0.52m, 둥근 모서리(2.8cm). 정면=브랜드 모스, 옆·안쪽 면=한 톤 밝은 모스(빛이 닿는 두께가 읽힌다)
+  const SW = 2.9, FD = 0.52;
   const Y = (v) => (sym.aspect - v) * SW;      // 심볼 세로 좌표 → 높이(m)
   const X = (u) => (u - 0.5) * SW;
   const { outer, holes } = symbolShapes(sym, SW);
-  const frame = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: FD, bevelEnabled: true, bevelSize: 0.01, bevelThickness: 0.01, bevelSegments: 2, curveSegments: 12 }), mat(COLORS.moss, 0.62));
+  const frame = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: FD - 0.056, bevelEnabled: true, bevelSize: 0.028, bevelThickness: 0.028, bevelSegments: 4, curveSegments: 14 }),
+    [mat(COLORS.moss, 0.86), mat('#5B6B56', 0.86)]);
+  frame.geometry.translate(0, 0, 0.028);
   frame.position.z = -FD / 2; frame.castShadow = true; frame.receiveShadow = true;
   shelf.add(frame);
   const shelfShadow = contact(3.8, 1.3, 0.9);
   shelfShadow.position.z = 0.1;
   shelf.add(shelfShadow);
-  // 심볼 안쪽 빈 공간의 라벤더 뒷판
-  for (const h of holes) {
-    const bp = new THREE.Mesh(new THREE.ShapeGeometry(h), mat(COLORS.lavender, 0.9));
-    bp.position.z = -FD / 2 + 0.03; bp.receiveShadow = true;
+  // 2.0 최종: 라벤더 뒷판 → 심볼 외곽 전체를 덮는 3cm 두께 뒷장(캐비닛 등판). 앞 틀과 1.5cm 떨어져 그림자 틈이 생긴다
+  const backBoard = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: 0.03, bevelEnabled: false, curveSegments: 14 }), mat(COLORS.lavender, 0.9, { emissive: '#E6DAF2', emissiveIntensity: 0.06 }));
+  backBoard.position.z = -FD / 2 - 0.045; backBoard.receiveShadow = true; backBoard.castShadow = true;
+  shelf.add(backBoard);
+  for (const h of holes) {   // 구멍 안쪽 면(틀 깊이 안의 뒤판): 실제로 안쪽으로 들어가 앉은 벽감
+    const bp = new THREE.Mesh(new THREE.ShapeGeometry(h), mat('#BBAACD', 0.9));
+    bp.position.z = -FD / 2 + 0.012; bp.receiveShadow = true;
     shelf.add(bp);
   }
   // 선반: 가운데 기둥 끝(심볼 v=0.2755)과 아래 고리 꼭대기(v≈0.461)에 맞춘다
   const inner = [X(0.111), X(0.889)];
-  const boardMat = mat('#F5ECD6', 0.7);
-  const BT = 0.026;
+  const boardMat = mat('#F5ECD6', 0.82);
+  const lipMat = mat('#EADFC4', 0.82);
+  // 2.0 최종: 3.6cm 선반 + 앞 가장자리 띠(살짝 도드라짐) + 양 끝 아래 받침쇠. 선반 끝은 틀 옆면에 3cm 묻혀 실제로 끼워진 모양
+  const BT = 0.036;
   const shelfTop = { mid: Y(0.2755), low: Y(0.461) + BT };
+  const SD = FD - 0.06, sw = inner[1] - inner[0] + 0.05;
   for (const y of [shelfTop.mid, shelfTop.low]) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(inner[1] - inner[0] - 0.01, BT, FD - 0.04), boardMat);
-    b.position.set(0, y - BT / 2, -0.005); b.castShadow = true; b.receiveShadow = true;
-    shelf.add(b);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(sw, BT, SD), boardMat);
+    b.position.set(0, y - BT / 2, 0.0); b.castShadow = true; b.receiveShadow = true;
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(sw, BT + 0.014, 0.022), lipMat);
+    lip.position.set(0, y - BT / 2 - 0.004, SD / 2 + 0.006); lip.castShadow = true; lip.receiveShadow = true;
+    shelf.add(b, lip);
+    // rev6-5: 양 끝 아래 초록 받침쇠는 임시 상자처럼 보여 뺐다(선반 끝은 틀 옆면에 묻혀 있다)
   }
 
   /* ---- 큐레이션 9권: 시크릿 책장에 9권 모두 + 입구 양쪽 큐레이션 테이블(왼쪽 01~05, 오른쪽 06~09)에도 9권 모두 ---- */
@@ -163,23 +196,53 @@ export function buildRoom({ sym, packages }) {
   const archL = X(0.2775), archR = X(0.7225);
   // 책장: [책 번호, 선반, x, 기울기] — 01~04는 두 아치 안, 05~09는 아래 칸
   const shelfSlots = [
-    [0, 'mid', archL - 0.22, 0], [1, 'mid', archL + 0.06, 0.03],
-    [2, 'mid', archR - 0.06, -0.03], [3, 'mid', archR + 0.22, 0],
-    [4, 'low', -0.92, 0], [5, 'low', -0.46, 0.02], [6, 'low', 0.0, 0], [7, 'low', 0.46, -0.02], [8, 'low', 0.92, 0],
+    // 2.0 최종(3차): 책+페이지 한 쌍(폭 약 0.29m)이 아치 안에 두 쌍씩, 아치 가운데를 기준으로 대칭 배치
+    [0, 'mid', archL - 0.19, 0], [1, 'mid', archL + 0.14, 0],
+    [2, 'mid', archR - 0.19, 0], [3, 'mid', archR + 0.14, 0],
+    [4, 'low', -0.97, 0], [5, 'low', -0.51, 0], [6, 'low', -0.05, 0], [7, 'low', 0.41, 0], [8, 'low', 0.87, 0],
   ];
-  for (const [i, lv, x, lean] of shelfSlots) {
+  // 2.0 최종(3차) 진열 규칙 — 브랜드 영상과 같은 한 가지 규칙을 아홉 권 모두에:
+  //   책은 선반 앞에서 약 20cm 들어가 정면으로 서고(모두 같은 각도), 그 책의 '책 속 한 페이지'(이번 주 원문)는
+  //   책 바로 앞, 오른쪽으로 책 폭의 절반만큼 비켜 낮은 받침 위에 선다. 책 이름은 왼쪽에 보이고, 페이지는 책과 한 쌍으로 읽힌다.
+  //   책을 펼칠 때는 페이지가 앞으로 살짝 비켜나 표지가 지나갈 자리를 내준다(main.js select)
+  const PG = { w: 0.152, h: 0.152 * DISPLAY_PAGE_ASPECT, t: 0.002 };
+  const cardEdge = mat('#F4EEE2', 0.95);
+  const standMat = mat('#EADFC4', 0.82);
+  for (const [i, lv, x] of shelfSlots) {
     const slot = new THREE.Group();
-    slot.position.set(x, shelfTop[lv] + bh / 2 + 0.002, 0.02);
-    slot.rotation.set(-0.11, 0, lean); // 뒤 판에 살짝 기대 선다
+    slot.position.set(x, shelfTop[lv] + bh / 2 + 0.002, -0.05);
+    slot.rotation.set(-0.08, 0, 0);   // 뒤로 살짝 기대 선다
     slot.add(books[i].group);
     shelf.add(slot);
+    const under = contact(bw + 0.08, bt + 0.12, 0.6);
+    under.position.set(x, shelfTop[lv] + 0.001, -0.05);
+    shelf.add(under);
+    const tex = displayPageTexture(BOOKS[i]);
+    // 2026-11-10 노출 수정: 종이 반사율 1.0(완전한 흰색)은 실내 조명 여럿이 겹치면 톤 매핑 어깨에 걸려 글자가 사라졌다.
+    // 실제 종이처럼 0.86, 자체 발광 0.14 → 0.06. 종이 색·글자 원고(텍스처)는 그대로
+    const face = new THREE.MeshStandardMaterial({ map: tex, color: new THREE.Color(0.8, 0.8, 0.8), roughness: 0.92, emissive: '#FFFFFF', emissiveMap: tex, emissiveIntensity: 0.07, alphaTest: 0.5 });   // 2026-11-11(2): 밝아진 낮에도 글자 대비 유지(0.86/0.06 → 0.76/0)
+    const card = new THREE.Group();
+    card.position.set(x + bw * 0.6, shelfTop[lv], -0.05 + bt / 2 + 0.034);   // 책 이름(가운데)이 가려지지 않게 책 폭의 76% 지점부터
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(PG.w * 0.78, 0.012, 0.045), standMat);
+    stand.position.y = 0.006; stand.castShadow = true; stand.receiveShadow = true;
+    const page = new THREE.Mesh(new THREE.BoxGeometry(PG.w, PG.h, PG.t), [face, face, face, face, face, face]);
+    page.position.set(0, 0.012 + PG.h / 2 * Math.cos(0.1), -0.008 - PG.h / 2 * Math.sin(0.1));
+    page.rotation.x = -0.1;
+    page.castShadow = true; page.receiveShadow = true;
+    const cardShadow = contact(PG.w + 0.06, 0.09, 0.5);
+    cardShadow.position.y = 0.0015;
+    card.add(stand, page, cardShadow);
+    card.traverse((m) => { m.userData.noPick = true; });
+    card.userData.rest = card.position.clone();
+    books[i].pageCard = card;
+    shelf.add(card);
   }
 
   // 소품: 아치 안 빈자리와 심볼 아래 두 고리 안
   const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.075, 40, 28), mat(COLORS.lavender, 0.5));
-  sphere.position.set(archR - 0.33, shelfTop.mid + 0.075, 0.0); sphere.castShadow = true;
+  sphere.position.set(X(0.778) - 0.2, 0.075, 0.12); sphere.castShadow = true;   // 2.0 최종(3차): 아치 안은 책·페이지 쌍만 — 소품은 아래 고리 안 바닥으로
   const blk = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.13), mat(COLORS.yellow, 0.6));
-  blk.position.set(archL + 0.33, shelfTop.mid + 0.065, 0); blk.rotation.y = 0.4; blk.castShadow = true;
+  blk.position.set(X(0.222) + 0.2, 0.065, 0.12); blk.rotation.y = 0.4; blk.castShadow = true;
   const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.2, 40), mat(COLORS.moss, 0.55));
   cyl.position.set(X(0.222), 0.1, 0.02); cyl.castShadow = true;
   const cyl2 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.12, 40), mat(COLORS.ivory, 0.6));
@@ -253,16 +316,33 @@ export function buildRoom({ sym, packages }) {
     return w;
   };
   const spots = [];
+  // rev6-5: 패키지 밑면이 받침과 한 색으로 녹아 떠 보였다 → 밑면 바로 아래 좁고 진한 접지 그림자(받침 전체 그림자와 별도)
+  const pkgFoot = (pk, mode) => {
+    const b = pk.closedBox, sx = b.max.x - b.min.x;
+    const sz = mode === 'stand' ? b.max.y - b.min.y : b.max.z - b.min.z;
+    footTex ||= (() => {   // 둥근 사각 접지 그림자: 밑면 윤곽을 따라 진하고 바깥으로 빨리 사라진다
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const x = c.getContext('2d'); x.filter = 'blur(16px)'; x.fillStyle = 'rgba(38,34,26,0.72)';
+      x.beginPath(); x.roundRect(52, 52, 152, 152, 14); x.fill();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    })();
+    const m = new THREE.Mesh(new THREE.PlaneGeometry((sx + 0.05) * 256 / 152, (sz + 0.06) * 256 / 152),
+      new THREE.MeshBasicMaterial({ map: footTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.0015; m.renderOrder = 1;
+    return m;
+  };
   const plateOn = (g, label, y, z) => {
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.064), new THREE.MeshBasicMaterial({ map: plateTexture(label), transparent: true }));
     plate.position.set(0, y, z);
     g.add(plate);
   };
   // 각 받침은 입구(관람 동선 시작) 쪽을 향해 비스듬히 선다. 높이를 낮게 해 뒤의 책장을 가리지 않는다
-  const faceEntry = (g) => { g.rotation.y = Math.atan2(0 - g.position.x, -1.0 - g.position.z); };
+  // 2.0: 첫 실내 구도의 카메라 자리(입구 안쪽 z −0.5)를 향한다
+  const faceEntry = (g) => { g.rotation.y = Math.atan2(0 - g.position.x, -0.5 - g.position.z); };
 
   // Ch1: 낮은 아이보리 기둥 위 비스듬한 그린 받침(렉턴)
-  const ped1 = new THREE.Group(); ped1.position.set(-1.45, 0, -3.45); faceEntry(ped1);
+  const ped1 = new THREE.Group(); ped1.position.set(...PKG.ch1); faceEntry(ped1);
   const col1 = shadowedMesh(new THREE.BoxGeometry(0.46, 0.5, 0.52), ivoryBlock);
   col1.position.y = 0.25;
   const tilt = new THREE.Group(); tilt.position.set(0, 0.56, 0); tilt.rotation.x = 0.42;
@@ -277,10 +357,10 @@ export function buildRoom({ sym, packages }) {
   s1.position.z = 0.02; s1.rotation.y = Math.PI;
   group.add(ped1);
   footprint(ped1, 0.46, 0.52);
-  spots.push(new THREE.Vector3(-1.45, 0.65, -3.45));
+  spots.push(new THREE.Vector3(PKG.ch1[0], 0.65, PKG.ch1[2]));
 
   // Ch2: 낮은 라벤더 계단형 블록. 아래 단에 세워 뒤 단에 살짝 기대 둠
-  const ped2 = new THREE.Group(); ped2.position.set(1.45, 0, -3.45); faceEntry(ped2);
+  const ped2 = new THREE.Group(); ped2.position.set(...PKG.ch2); faceEntry(ped2);
   const st1 = shadowedMesh(new THREE.BoxGeometry(0.6, 0.36, 0.5), mat(COLORS.lavender, 0.8, { emissive: '#E6DAF2', emissiveIntensity: 0.14 }));
   st1.position.set(0, 0.18, 0);
   const st2 = shadowedMesh(new THREE.BoxGeometry(0.6, 0.3, 0.15), mat('#B9A7CB', 0.8, { emissive: '#E6DAF2', emissiveIntensity: 0.1 }));
@@ -289,24 +369,48 @@ export function buildRoom({ sym, packages }) {
   t2.position.set(0, 0.36, 0.251);
   const ch2Stand = standUp(packages.ch2, 0.1);
   ch2Stand.position.y += 0.36; ch2Stand.position.z = -0.02;
-  ped2.add(st1, st2, t2, ch2Stand, contact(1.1, 0.9));
+  // rev6-5: 정면으로만 서 있으면 두께가 안 보여 판처럼 보였다 → 살짝 돌려 옆면(두께)이 보이게 + 바닥 닿는 곳 접지 그림자
+  const ch2Yaw = new THREE.Group(); ch2Yaw.position.copy(ch2Stand.position); ch2Stand.position.set(0, ch2Stand.position.y - 0.36 + 0.0, 0); ch2Yaw.position.y = 0.36;
+  ch2Yaw.rotation.y = 0; ch2Yaw.add(ch2Stand, pkgFoot(packages.ch2, 'stand'));
+  ped2.add(st1, st2, t2, ch2Yaw, contact(1.1, 0.9));
   plateOn(ped2, 'Ch2 · Selection Curation', 0.2, 0.252);
   group.add(ped2);
   footprint(ped2, 0.6, 0.5);
-  spots.push(new THREE.Vector3(1.45, 0.6, -3.45));
+  spots.push(new THREE.Vector3(PKG.ch2[0], 0.6, PKG.ch2[2]));
 
   // Ch3: 가운데 낮은 노란 원형 스툴 위에 세워 둠
-  const ped3 = new THREE.Group(); ped3.position.set(0, 0, -3.75); faceEntry(ped3);
-  const stool = shadowedMesh(new THREE.CylinderGeometry(0.32, 0.34, 0.32, 64), mat('#F8F0C8', 0.7, { emissive: '#FFF6D6', emissiveIntensity: 0.16 }));
+  const ped3 = new THREE.Group(); ped3.position.set(PKG.ch3[0], DAIS, PKG.ch3[2]); faceEntry(ped3);   // 2.0 최종: 다이스 위
+  const stool = shadowedMesh(new THREE.CylinderGeometry(0.32, 0.34, 0.32, 64), mat('#EFE6D2', 0.75, { emissive: '#F5ECD6', emissiveIntensity: 0.08 })   /* rev6-6: 노란 스툴 → 셸프와 같은 아이보리(노란 Ch3 파우치와 같은 색이라 윤곽이 묻혔다) */);
   stool.position.y = 0.16;
   const t3 = new THREE.Mesh(new THREE.TorusGeometry(0.325, 0.006, 8, 96), mat(COLORS.moss, 0.6));
   t3.rotation.x = Math.PI / 2; t3.position.y = 0.32;
   ped3.add(stool, t3, contact(0.9, 0.9));
   plateOn(ped3, 'Ch3 · Archive Curation', 0.17, 0.335);
-  placeOn(packages.ch3, ped3, 0.32);
+  const s3 = placeOn(packages.ch3, ped3, 0.32);
+  // rev6-5b: 정면 유지(클라이언트 요청) — 두께는 옆면 명암·그림자로
+  s3.add(pkgFoot(packages.ch3, 'flat'));
   group.add(ped3);
   footprint(ped3, 0.68, 0.68);
-  spots.push(new THREE.Vector3(0, 0.55, -3.75));
+  spots.push(new THREE.Vector3(PKG.ch3[0], 0.55, PKG.ch3[2]));
+
+  /* ---- 2.0 최종: 진열 구역을 감싸는 두 아치 기둥(중경 레이어). 아이보리 회벽 기둥 + 라벤더 아치 벽감 + 모스 받침.
+     셸프와 옆벽 사이에 한 겹을 더해, 걸을 때 셸프·기둥·벽이 서로 다른 속도로 움직인다(시차) ---- */
+  const pierMat = mat(COLORS.ivory, 0.92, { emissive: COLORS.ivory, emissiveIntensity: 0.08 });
+  const pierInset = mat('#D9CCE4', 0.9, { emissive: '#E9DDF5', emissiveIntensity: 0.08 });
+  for (const sx of [-1, 1]) {
+    const pier = new THREE.Group();
+    pier.position.set(sx * 3.62, 0, -4.7);   // 2.0 최종(3차): 옆벽 쪽으로 붙여 통로 확보
+    pier.rotation.y = -sx * 0.3;
+    const body = new THREE.Mesh(new THREE.ExtrudeGeometry(archShape(0.84, 2.8), { depth: 0.26, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 3, curveSegments: 32 }), pierMat);
+    body.position.z = -0.13; body.castShadow = true; body.receiveShadow = true;
+    const inset = new THREE.Mesh(new THREE.ExtrudeGeometry(archShape(0.5, 2.35), { depth: 0.02, bevelEnabled: false, curveSegments: 32 }), pierInset);
+    inset.position.set(0, 0.22, 0.155); inset.receiveShadow = true;
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.12, 0.36), mat(COLORS.moss, 0.82));
+    foot.position.y = 0.06; foot.castShadow = true; foot.receiveShadow = true;
+    pier.add(body, inset, foot, contact(1.3, 0.8, 0.7));
+    group.add(pier);
+    footprint(pier, 0.92, 0.36);
+  }
 
   /* ---- 뒷벽 왼쪽: '큐레이션' 보드(큐레이션 색 9칸). 칸을 누르면 그 책이 펼쳐진다 ---- */
   const board = new THREE.Group();
@@ -348,13 +452,15 @@ export function buildRoom({ sym, packages }) {
   dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: '#FFF6D6', size: 0.012, transparent: true, opacity: 0.55, depthWrite: false }));
   group.add(dust);
+  // 2.0: 떠다니는 먼지 점은 CGI 티가 나서 끈다(Higgsfield 셸프 참고안에서도 제거). 되살리려면 true
+  dust.visible = false;
 
   return {
     group, openables, shelf, windows: arch.windows, obstacles, tiles, floor, packageSpots: spots,
     setNight(n) { arch.setNight(n); coveMat.color.setRGB(1, 0.95, 0.82).multiplyScalar(1 + n * 1.2); },
     update(t, dt, still) {
       arch.update(t, still);
-      if (still) return;
+      if (still || !dust.visible) return;   // 2.0: 숨긴 먼지는 계산하지 않는다
       const a = dustGeo.attributes.position;
       for (let i = 0; i < N; i++) {
         let y = a.getY(i) + dt * 0.025 * (0.4 + (i % 5) * 0.15);

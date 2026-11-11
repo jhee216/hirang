@@ -3,8 +3,12 @@
 import * as THREE from 'three';
 import { COLORS } from '../config.js';
 import { archShape } from './door.js';
+import { BOOKS } from '../books-data.js';
+import { bookCover, displayPageTexture } from '../textures.js';
 
-const mat = (color, rough = 0.9, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, ...extra });
+import { sharedMat } from '../mat-cache.js';
+// 2.0: 같은 성질의 재질은 공유·무광(mat-cache.js). 밤에 색이 바뀌는 안뜰 바닥만 따로 만든다(아래 yardFloor)
+const mat = (color, rough = 0.9, extra = {}) => sharedMat(color, rough, extra);
 const IVORY_LIT = { emissive: '#FFF6E2', emissiveIntensity: 0.05 };
 
 function shadowed(m) { m.castShadow = true; m.receiveShadow = true; return m; }
@@ -15,37 +19,7 @@ function trim(w, d = 0.012, h = 0.02) {
 }
 
 /* ---------- 떠 있는 페이지 · 책 텍스처 ---------- */
-function pageTexture(highlight) {
-  const W = 420, H = 580;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const x = c.getContext('2d');
-  x.fillStyle = '#FBF7EE'; x.fillRect(0, 0, W, H);
-  const bar = (y, w, col) => { x.fillStyle = col; x.beginPath(); x.roundRect(46, y, w, 12, 6); x.fill(); };
-  let y = 70;
-  for (let i = 0; i < 14; i++) {
-    if (i === 3 && highlight) { bar(y - 2, 300, '#F4E7A6'); y += 30; continue; }
-    if (i === 8) { y += 26; continue; }
-    bar(y, 230 + ((i * 53) % 100), '#D7D3CC');
-    y += 30;
-  }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  return t;
-}
-
-function cloudCoverTexture(bg, cloud, hill) {
-  const W = 300, H = 420;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const x = c.getContext('2d');
-  x.fillStyle = bg; x.fillRect(0, 0, W, H);
-  x.fillStyle = cloud;
-  x.beginPath(); x.arc(110, 250, 60, Math.PI, 0); x.arc(190, 240, 50, Math.PI, 0); x.lineTo(240, 300); x.lineTo(50, 300); x.closePath(); x.fill();
-  x.fillStyle = hill;
-  x.beginPath(); x.moveTo(0, 330); x.quadraticCurveTo(110, 270, 300, 320); x.lineTo(300, 420); x.lineTo(0, 420); x.closePath(); x.fill();
-  x.fillStyle = 'rgba(253,249,198,0.95)';
-  x.beginPath(); x.arc(220, 150, 26, 0, Math.PI * 2); x.fill();
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  return t;
-}
+// (2.0 최종: 가짜 글줄 페이지·구름 표지 생성기는 지움 — 실제 원문·시크릿 커버만 쓴다)
 
 export function buildArchitecture(group, ROOM) {
   const { x: RX, z0, z1, h: RH } = ROOM;
@@ -78,7 +52,7 @@ export function buildArchitecture(group, ROOM) {
 
   /* ---- 창 밖 안뜰: 햇빛 받는 바닥, 낮은 벽, 계단 블록, 노란·라벤더 아치 ---- */
   const yard = new THREE.Group();
-  const yardFloor = new THREE.Mesh(new THREE.PlaneGeometry(9, D + 4), mat('#F3E8D2', 0.9, { emissive: '#FFF1D8', emissiveIntensity: 0.12 }));
+  const yardFloor = new THREE.Mesh(new THREE.PlaneGeometry(9, D + 4), new THREE.MeshStandardMaterial({ color: '#F3E8D2', roughness: 0.9, emissive: '#FFF1D8', emissiveIntensity: 0.12 }));   // 밤마다 색이 바뀌므로 공유하지 않는다
   yardFloor.rotation.x = -Math.PI / 2; yardFloor.position.set(-RX - 4.6, 0.001, cz); yardFloor.receiveShadow = true;
   const yardWall = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.4, 5.2, D + 4), wallMat));
   yardWall.position.set(-RX - 7.6, 2.6, cz);
@@ -119,32 +93,35 @@ export function buildArchitecture(group, ROOM) {
 
   /* ---- 공간에 떠 있는 종이 페이지와 책(천천히 떠다닌다) ---- */
   const floaters = [];
-  const pageGeo = new THREE.BoxGeometry(0.26, 0.36, 0.004);
+  const pageGeo = new THREE.BoxGeometry(0.24, 0.24 * 5407 / 3535, 0.003);   // 영상 페이지 카드 비율(1537×2319)
   const edge = mat(COLORS.moss, 0.6);
-  const pageTex = [pageTexture(true), pageTexture(false)];
+  // 2.0 최종: 회색 막대(가짜 글줄) → 이번 주 실제 원문 페이지. 큐레이션마다 하나씩 다른 페이지
+  const pageTex = BOOKS.map((b) => displayPageTexture(b));
+  const paperBack = mat('#F7F0DF', 0.95);
   // [x, y, z, 기울기x, 방향y] — 중간 높이에서 시선 쪽을 비스듬히 향하게
   const pagePos = [
-    [-2.1, 2.85, -3.1, 0.12, 0.55], [-1.2, 3.05, -6.6, -0.1, 0.2], [2.2, 2.9, -2.9, 0.1, -0.6],
-    [1.85, 3.1, -6.6, -0.08, -0.35], [-3.45, 2.95, -4.6, 0.06, 1.2], [3.2, 2.7, -4.9, -0.15, -1.0],
+    [-2.1, 2.85, -3.1, 0.12, 0.55], [-1.2, 3.55, -6.6, -0.1, 0.2], [2.2, 2.9, -2.9, 0.1, -0.6],
+    [1.85, 3.6, -6.6, -0.08, -0.35],   // 2.0 최종: 뒤쪽 두 장은 첫 실내 구도의 위 가장자리에 반쯤 걸려 위로(고개를 들면 보인다) [-3.45, 2.95, -4.6, 0.06, 1.2], [3.2, 2.7, -4.9, -0.15, -1.0],
   ];
   pagePos.forEach(([x, y, z, rx, ry], i) => {
-    const face = new THREE.MeshStandardMaterial({ map: pageTex[i % 2], roughness: 0.85, emissive: '#FFFFFF', emissiveMap: pageTex[i % 2], emissiveIntensity: 0.32 });
-    const m = new THREE.Mesh(pageGeo, [edge, edge, edge, edge, face, face]);
+    const tex = pageTex[(i * 2 + 1) % pageTex.length];
+    const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, emissive: '#FFFFFF', emissiveMap: tex, emissiveIntensity: 0.28, alphaTest: 0.5 });
+    const m = new THREE.Mesh(pageGeo, [face, face, face, face, face, face]);   // 2026-11-11: 페이지 원본(물결 가장자리) — 뒷면도 같은 모양으로 잘린다
     m.position.set(x, y, z); m.rotation.set(rx, ry, (i % 3 - 1) * 0.12);
     m.castShadow = true;
     floaters.push({ m, base: m.position.clone(), rot: m.rotation.clone(), ph: i * 1.7, amp: 0.05 + (i % 3) * 0.015 });
     group.add(m);
   });
-  const covers = [
-    cloudCoverTexture('#C9B8DD', '#F2EEE6', '#4F5F4C'), cloudCoverTexture('#F6EBB5', '#C9B8DD', '#F2EEE6'),
-    cloudCoverTexture('#F4EFE6', '#C9B8DD', '#E9D99A'), cloudCoverTexture('#4F5F4C', '#C9B8DD', '#F6EBB5'),
-  ];
+  // 2.0 최종: 지어낸 구름 표지 → 실제 큐레이션 시크릿 커버(셸프의 책과 같은 표지·색)
+  const floatBooks = [BOOKS[1], BOOKS[4], BOOKS[6], BOOKS[7], BOOKS[2]];
   const bookGeo = new THREE.BoxGeometry(0.16, 0.22, 0.026);
   const pagesSide = mat('#F3ECDD', 0.9);
   const bookPos = [[-3.0, 3.5, -3.6, 0.4, 0.8], [2.9, 3.0, -4.0, -0.3, -1.1], [-1.6, 3.7, -4.4, 0.6, 0.2], [3.4, 3.35, -5.4, 0.2, -0.4], [-3.5, 3.3, -6.0, -0.4, 1.2]];
   bookPos.forEach(([x, y, z, rx, ry], i) => {
-    const cov = new THREE.MeshStandardMaterial({ map: covers[i % covers.length], roughness: 0.75 });
-    const m = new THREE.Mesh(bookGeo, [edge, pagesSide, pagesSide, pagesSide, cov, cov]);
+    const b = floatBooks[i % floatBooks.length];
+    const cov = new THREE.MeshStandardMaterial({ map: bookCover(b), roughness: 0.8, emissive: '#FFFFFF', emissiveMap: bookCover(b), emissiveIntensity: 0.25 });
+    const body = mat(b.color, 0.85);
+    const m = new THREE.Mesh(bookGeo, [edge, pagesSide, pagesSide, pagesSide, cov, body]);
     m.position.set(x, y, z); m.rotation.set(rx, ry, 0.2);
     m.castShadow = true;
     floaters.push({ m, base: m.position.clone(), rot: m.rotation.clone(), ph: 3 + i * 2.1, amp: 0.06 });
