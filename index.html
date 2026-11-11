@@ -3079,6 +3079,34 @@ html.hl-locked .hl-glogo{visibility:hidden}
 
 /* 2026-11-11 슬로건 크기 90% — 이 판은 모든 화면에서 --f로 크기를 정하므로 글자만 0.9배(자리·간격 계산은 그대로) */
 #home.home.hm2 .h2-big.h2-ko{font-size:calc(var(--f, clamp(44px,5.6vw,100px)) * .9)}
+
+/* ===== 2026-11-11 홈 7×3 그리드 (데스크톱) =====
+   여백(좌우·아래 32px, 위는 로고 윗선 24px)을 뺀 영역을 가로 7칸 × 세로 3칸으로 나누고, 칸 사이는 썸네일과 글 목록 사이 간격(24px) 하나로 통일한다.
+   1행 1칸: 로고(윗선) + 썸네일(1행 아랫선에 붙음) → 2행 윗선부터 글 목록(1–2칸)
+   사진 3장: 4–7칸, 썸네일 윗선 ~ 2행 아랫선, 사진 사이도 같은 24px
+   3행: 슬로건(1–5칸, 아래 여백선) · 안내 문구(7칸, 같은 아랫선) */
+@media (min-width:901px) and (min-height:601px){
+ html #home.home.hm2{
+  container-type:size;   /* 칸 계산은 홈 화면 자체 크기(스크롤바 제외) 기준 */
+  --gx:32px;--gt:24px;--gb:32px;--g:24px;
+  --cw:calc((100cqw - var(--gx) * 2 - var(--g) * 6) / 7);
+  --rh:calc((100cqh - var(--gt) - var(--gb) - var(--g) * 2) / 3);
+  --th:min(calc(var(--cw) * 15 / 22), calc(var(--rh) - 34px - var(--g)));
+ }
+ html #home.home.hm2 .h2-side{position:absolute;left:var(--gx);right:auto;top:calc(var(--gt) + var(--rh) - var(--th));width:calc(var(--cw) * 2 + var(--g));display:block;margin:0}
+ html #home.home.hm2 .h2-thumb{width:calc(var(--th) * 22 / 15);height:var(--th);aspect-ratio:auto;display:block}
+ html #home.home.hm2 .h2-menu{margin:var(--g) 0 0;font-size:clamp(18px,min(1.3vw,2.5vh),24px)}
+ html #home.home.hm2 .h2-menu a{padding-top:max(2px,calc(var(--rh) / 60));padding-bottom:max(2px,calc(var(--rh) / 60))}
+ html #home.home.hm2 .h2-menu .h2-gb{margin-top:12px}
+ html #home.home.hm2 .h2-photos{position:absolute;left:calc(var(--gx) + (var(--cw) + var(--g)) * 3);right:var(--gx);width:auto;margin:0;
+  top:calc(var(--gt) + var(--rh) - var(--th));height:calc(var(--th) + var(--g) + var(--rh));bottom:auto;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:100%;gap:var(--g);align-items:stretch}
+ html #home.home.hm2 .h2-photos .h2-pic{aspect-ratio:auto;height:100%;min-height:0;grid-column:auto}
+ html #home.home.hm2 .h2-photos .h2-pic img{width:100%;height:100%;object-fit:cover}
+ html #home.home.hm2 .h2-big.h2-ko{position:absolute;left:var(--gx);bottom:var(--gb);margin:0;max-width:calc(var(--cw) * 5 + var(--g) * 4);
+  font-size:min(calc(var(--f, 5.6vw) * .9), calc(var(--rh) / 2.3), calc((var(--cw) * 5 + var(--g) * 4) / 11.2));line-height:1.1;white-space:nowrap}
+ html #home.home.hm2 .h2-hint{position:absolute;left:auto;right:var(--gx);bottom:var(--gb);margin:0}
+}
 </style></head>
 <body>
 <div class="screen pre">
