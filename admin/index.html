@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#FFF9EA">
+<title>하이랑 관리자</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<!-- 공용 로고: 웹사이트·방명록과 같은 자리·같은 크기 -->
+<a class="hl-glogo" href="../index.html?view=website" aria-label="하이랑 홈으로"><img src="hirang-logo.png" alt="hirang" width="920" height="297"></a>
+
+<div class="screen" id="screen" data-view="login">
+  <!-- 왼쪽: 방명록과 같은 정보 칸 -->
+  <section class="lc">
+    <div class="lc-top">
+      <span class="logo-space" aria-hidden="true"></span>
+      <nav class="mini" aria-label="관리자 메뉴">
+        <a href="./" aria-current="page">관리자</a>
+        <a href="../guestbook/">GUESTBOOK</a>
+        <button type="button" id="logout" class="linkish" hidden>로그아웃</button>
+      </nav>
+    </div>
+    <div class="lc-bot">
+      <h1 class="t1">GUESTBOOK<br><b>비밀 방명록</b></h1>
+      <p class="lead">관리자 · 방문 통계와 비밀 방명록</p>
+      <div class="ch2" role="group" aria-label="보기" id="chs" hidden>
+        <a class="ch ch-a" href="#book" data-go="book"><span><b>비밀의 책</b><small>방문자가 남긴 모든 페이지 · 오래된 순</small></span><i aria-hidden="true">→</i></a>
+        <a class="ch ch-b" href="#list" data-go="list"><span><b>목록 · 관리</b><small>전체 · 공개 중 · 숨긴 글 · 관리자가 가림</small></span><i aria-hidden="true">→</i></a>
+      </div>
+      <dl class="lc-stat">
+        <div><dt>지금까지 남겨진 페이지</dt><dd id="sTotal">–</dd></div>
+        <div><dt>오늘 새로 올라온 페이지</dt><dd id="sToday">–</dd></div>
+      </dl>
+      <p class="note">숨긴 페이지는 관리자만 읽을 수 있습니다.</p>
+    </div>
+  </section>
+
+  <!-- 오른쪽: 알약 메뉴 + 보기 -->
+  <section class="rc">
+    <nav class="pills" aria-label="관리자 보기" id="pills">
+      <a class="pill" href="#book" data-go="book">비밀의 책</a>
+      <a class="pill" href="#list" data-go="list">목록 · 관리</a>
+      <a class="pill" href="#stats" data-go="stats">지금 하이랑</a>
+      <a class="pill" href="../guestbook/">GUESTBOOK</a>
+      <a class="pill" href="../index.html?view=website">홈</a>
+    </nav>
+
+    <!-- 로그인 -->
+    <div class="view v-login" id="login">
+      <div class="col deco" aria-hidden="true"><i class="tile" style="--c:#F6EFE4;--h:1.15"></i><i class="tile" style="--c:#EFCAC4"></i></div>
+      <div class="col deco" aria-hidden="true"><i class="tile" style="--c:#D9D4CE"></i><i class="tile" style="--c:#E8C9B3;--h:1.3"></i></div>
+      <article class="page login-page">
+        <p class="eyebrow">ADMIN</p>
+        <h2 class="prompt">관리자 로그인</h2>
+        <p class="hint" id="loginHint">이 화면의 숫자와 글은 서버에서 관리자 로그인을 확인한 뒤에만 내려옵니다.</p>
+        <form id="loginForm" class="lform">
+          <label id="emailRow" hidden><span>이메일</span><input type="email" id="email" autocomplete="username"></label>
+          <label><span>비밀번호</span><input type="password" id="password" autocomplete="current-password" required></label>
+          <p class="err" id="loginErr" role="alert"></p>
+          <button type="submit" class="primary">로그인</button>
+        </form>
+      </article>
+      <div class="col deco" aria-hidden="true"><i class="tile" style="--c:#E2D5C3;--h:1.25"></i><i class="tile" style="--c:#D8DCC4"></i></div>
+      <div class="col deco" aria-hidden="true"><i class="tile" style="--c:#C9C2D6"></i><i class="tile" style="--c:#B49DC2;--h:1.25"></i></div>
+    </div>
+
+    <!-- 비밀의 책: 웹사이트 큐레이션처럼 9장씩 카드 모자이크. 마우스를 가까이 대면 그 칸이 커지며 글이 보이고, 누르면 한 장으로 펼쳐진다 -->
+    <div class="view v-book" id="book" hidden>
+      <div class="vhead">
+        <button type="button" class="turn sm" id="sPrev" aria-label="앞 9장">←</button>
+        <span class="bpos" id="sPos"></span>
+        <button type="button" class="turn sm" id="sNext" aria-label="다음 9장">→</button>
+        <span class="muted vsub">방문자가 남긴 모든 페이지 · 오래된 순</span>
+        <button type="button" class="ghost" id="printBook">PDF로 저장</button>
+      </div>
+      <div class="stage" id="stage">
+        <div class="mosaic" id="mosaic"></div>
+        <p class="empty" id="bookEmpty" hidden>아직 남겨진 페이지가 없습니다.</p>
+        <article class="page reading opened" id="apage" hidden aria-live="polite">
+          <button type="button" class="xclose" id="aClose" aria-label="닫기">×</button>
+          <div class="ahead">
+            <p class="eyebrow" id="aNo"></p>
+            <span class="tag" id="aVis"></span>
+          </div>
+          <h2 class="aname" id="aName"></h2>
+          <time class="atime" id="aTime"></time>
+          <div class="leaf" id="leaf"><p class="leaf-body" id="aBody"></p></div>
+          <div class="acts" id="aActs"></div>
+          <div class="turns">
+            <button type="button" class="turn" id="bPrev" aria-label="앞 장">←</button>
+            <span class="bpos" id="bPos"></span>
+            <button type="button" class="turn" id="bNext" aria-label="다음 장">→</button>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <!-- 목록 · 관리 -->
+    <div class="view v-list" id="list" hidden>
+      <div class="vhead">
+        <div class="filters" role="group" aria-label="보기">
+          <button type="button" data-f="all" aria-pressed="true">전체</button>
+          <button type="button" data-f="public" aria-pressed="false">공개 중</button>
+          <button type="button" data-f="private" aria-pressed="false">숨긴 글</button>
+          <button type="button" data-f="hidden" aria-pressed="false">관리자가 가림</button>
+        </div>
+        <button type="button" class="ghost refresh">새로고침</button>
+      </div>
+      <p class="empty" id="entriesEmpty" hidden>아직 남겨진 페이지가 없습니다.</p>
+      <ol id="entries" class="entries"></ol>
+    </div>
+
+    <!-- 지금 하이랑(방문 통계) -->
+    <div class="view v-stats" id="stats" hidden>
+      <div class="vhead"><span class="muted" id="asOf"></span><button type="button" class="ghost refresh">새로고침</button></div>
+      <div class="stiles">
+        <div class="tile st" style="--c:#F6EFE4"><span class="g">지금 접속 중</span><b id="tActive">–</b><small id="tActiveSub">브라우저 기준</small></div>
+        <div class="tile st" style="--c:#EFCAC4"><span class="g">오늘 방문</span><b id="tToday">–</b><small id="tTodaySub"></small></div>
+        <div class="tile st" style="--c:#D8DCC4"><span class="g">누적 방문</span><b id="tTotal">–</b><small id="tTotalSub"></small></div>
+        <div class="tile st" style="--c:#C9C2D6"><span class="g">방명록</span><b id="tGb">–</b><small id="tGbSub"></small></div>
+      </div>
+      <div class="sbody">
+        <section class="tile sheet" style="--c:#FFFCF4">
+          <p class="eyebrow">최근 14일</p>
+          <table class="daily"><thead><tr><th>날짜</th><th>방문</th><th>추정 고유 방문자</th><th>방명록</th></tr></thead><tbody id="daily"></tbody></table>
+        </section>
+        <details class="tile sheet note-card" style="--c:#E2D5C3">
+          <summary>숫자를 읽는 법</summary>
+          <ul>
+            <li><b>지금 접속 중</b>: 최근 45초 안에 신호를 보낸 브라우저 수. 같은 브라우저의 여러 탭은 1로 셉니다.</li>
+            <li><b>방문</b>: 30분 넘게 쉬었다가 다시 오면 새 방문. 새로고침·재접속(30분 이내)은 같은 방문입니다.</li>
+            <li><b>추정 고유 방문자</b>: 서로 다른 브라우저 수의 추정치입니다. 한 사람이 여러 기기·시크릿 창을 쓰거나 브라우저 저장소를 지우면 여러 명으로, 저장소가 막힌 창은 매번 새로 셉니다. 실제 사람 수가 아닙니다.</li>
+            <li>방문자 이름·계정·IP는 저장하지 않습니다. 브라우저 무작위 키의 해시만 저장합니다.</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  </section>
+</div>
+<!-- 인쇄(PDF)용: 한 장에 한 페이지 -->
+<div id="printArea" class="print-area" aria-hidden="true"></div>
+<script type="module" src="admin.js"></script>
+</body>
+</html>

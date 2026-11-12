@@ -5,5 +5,5 @@
 //    아래에 Project URL 과 anon(public) key 만 넣는다. anon key는 공개용 키다 — service_role 키는 절대 넣지 않는다.
 //    anon 권한으로는 테이블을 직접 읽을 수 없고(RLS), 정해진 함수(RPC)만 부를 수 있다.
 export const LIVE = {
-  supabase: { url: '', anonKey: '' },
+  supabase: { url: 'https://obizjnkfhhbbvybrrzev.supabase.co', anonKey: 'sb_publishable_ogYqSOBAmotMke4dfZTwlA_fIj3UKeM' },
 };
