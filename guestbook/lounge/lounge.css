@@ -27,6 +27,14 @@ html,body{margin:0;height:100%;background:var(--ivory);color:var(--ink);overflow
 .stand{position:fixed;left:32px;bottom:30px;z-index:16}
 .hint{position:fixed;z-index:14;pointer-events:none;font:600 12.5px/1 Pretendard,sans-serif;color:var(--ivory);background:var(--moss);padding:8px 12px;border-radius:999px;opacity:0;transform:translate(-50%,-150%);transition:opacity .15s}
 .hint.on{opacity:1}
+/* 처음 안내(원래 3D 독서구역과 같은 문구) · 옛 방으로 넘어갈 때 화면이 부드럽게 바랜다 */
+.explore-hint{position:fixed;left:50%;bottom:92px;transform:translate(-50%,8px);z-index:14;margin:0;display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0;transition:opacity .8s var(--ease),transform .8s var(--ease);pointer-events:none;text-align:center}
+.explore-hint b{font:700 11px/1 Inter,sans-serif;letter-spacing:.22em;color:var(--moss)}
+.explore-hint span{font:500 13px/1.4 Pretendard,sans-serif;color:var(--ink);background:rgba(255,252,244,.85);padding:7px 12px;border-radius:999px}
+.explore-hint.show{opacity:1;transform:translate(-50%,0)}
+#app:not([data-mode="overview"]) .explore-hint{opacity:0}
+.fade{position:fixed;inset:0;z-index:30;background:var(--ivory);opacity:0;pointer-events:none;transition:opacity .7s ease}
+.fade.on{opacity:1}
 
 /* 쓰기 시트: 데스크톱은 오른쪽 종이 카드, 좁은 화면은 아래 시트 */
 .sheet{position:fixed;z-index:16;background:var(--paper);border:1px solid var(--line);box-shadow:0 18px 50px -24px rgba(46,58,44,.35)}

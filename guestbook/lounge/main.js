@@ -70,18 +70,18 @@ const [sym, logoImg] = await Promise.all([
 const world = buildLounge({ sym, logoImg });
 scene.add(world.group);
 const { book, tray, writeChair, readChair } = world;
-const traces = buildTraces(sym);
+const traces = buildTraces();
 scene.add(traces.group);
 const BU = book.userData;
 
 // 쓰는 종이: 트레이 맨 위 한 장. 글이 실시간으로 적힌다(앞면 좌우를 뒤집어 앉은 사람 쪽에서 바로 읽히게)
 const writeTex = makePageTexture(297 / 210);
-writeTex.center.set(0.5, 0.5); writeTex.rotation = Math.PI;   // 앉은 사람 쪽에서 바로 읽히게(위쪽이 책상 안쪽)
+// 종이 앞면 위쪽(캔버스 위)은 종이의 −z — 책상 위에서 +x를 향하게 돌려, 왼쪽 끝에 앉은 사람에게 바로 읽힌다
 const page = buildPage(writeTex);
 scene.add(page);
 const T = LAYOUT.table;
 const PAGE_TRAY = () => { const p = tray.localToWorld(new THREE.Vector3(0, 0.0195, 0.008)); return { pos: p, ry: tray.rotation.y }; };
-const PAGE_DESK = { pos: new THREE.Vector3(T.x - 0.08, T.h + 0.0007, T.z - 0.13), ry: 0.04 };
+const PAGE_DESK = { pos: new THREE.Vector3(T.x - 0.45, T.h + 0.0007, T.z + 0.02), ry: -Math.PI / 2 + 0.05 };   // 쓰는 의자 앞(위쪽이 +x)
 function placePage(p) { page.position.copy(p.pos); page.rotation.set(0, p.ry, 0); }
 placePage(PAGE_TRAY());
 
@@ -96,49 +96,97 @@ leftTex.center.set(0.5, 0.5); leftTex.rotation = Math.PI;
 leafBackTex.center.set(0.5, 0.5); leafBackTex.rotation = Math.PI;
 for (const t of [leftTex, leafBackTex]) t.draw({ ruled: false });
 
-/* ---------- 카메라 ---------- */
-// 시점: [위치, 바라볼 곳, 렌즈]. 세로 화면은 p 값을 쓴다
+/* ---------- 카메라: 걷는 관람객(원래 3D 독서구역과 같은 방식) ---------- */
+// 걷기·앉기는 눈 위치 + 시선(yaw·pitch). 쓰기·읽기는 종이/책을 중심으로 도는 궤도(패키지 보기처럼 끌어 돌리고 휠로 다가가기).
 const RC = LAYOUT.readChair, WC = LAYOUT.writeChair;
-const VIEWS = {
-  // 세로 화면: 왼쪽 벽 쪽에서 방을 가로질러 — 책상·두 의자·받침의 방명록이 한 화면에(방명록을 숨기지 않는다)
-  overview: { pos: [-2.05, 1.5, -0.3], look: [0.35, 0.85, -3.7], fov: 42, p: { pos: [-2.2, 1.8, -1.9], look: [1.27, 0.42, -3.55], fov: 74 } },
-  // 쓰는 의자에 앉은 눈높이(좌면 0.44 m + 앉은키): 책상 위 종이를 내려다본다
-  seatWrite: { pos: [WC.x, 1.17, WC.z - 0.06], look: [WC.x + 0.18, 0.72, T.z + 1.3], fov: 60, p: { pos: [WC.x, 1.16, WC.z + 0.02], look: [WC.x, 0.7, T.z + 0.15], fov: 70 } },
-  // 쓰는 중: 종이에 조금 더 가까이. 오른쪽 입력 카드를 피해 종이가 화면 왼쪽에 오게
-  // (앉은 사람의 왼쪽이 +x — 종이를 화면 왼쪽에 두려면 종이보다 −x 쪽을 본다)
-  writing: { pos: [WC.x - 0.1, 1.12, WC.z + 0.02], look: [T.x - 0.28, 0.74, T.z - 0.1], fov: 46, p: { pos: [WC.x - 0.08, 1.42, WC.z - 0.05], look: [WC.x - 0.08, 0.5, WC.z + 0.38], fov: 60 } },
-  // 읽는 의자에 앉은 눈높이: 책상 오른쪽 끝(방명록이 놓일 자리)과 받침을 함께
-  seatRead: { pos: [RC.x + 0.12, 1.17, RC.z - 0.03], look: [T.x - 0.6, 0.74, T.z + 0.25], fov: 60, p: { pos: [RC.x + 0.1, 1.16, RC.z], look: [T.x + 0.3, 0.7, T.z + 0.03], fov: 70 } },
-  // 펼친 방명록을 읽는 의자에서 내려다본다(좌면에서 상체를 숙인 높이)
-  reading: { pos: [BOOK_DESK.pos.x + 0.5, 1.26, BOOK_DESK.pos.z + 0.02], look: [BOOK_DESK.pos.x - 0.06, 0.745, BOOK_DESK.pos.z], fov: 44, p: { pos: [BOOK_DESK.pos.x + 0.42, 1.38, BOOK_DESK.pos.z + 0.02], look: [BOOK_DESK.pos.x - 0.05, 0.74, BOOK_DESK.pos.z], fov: 62 } },
-  // 보내는 중: 책상과 받침의 방명록을 함께
-  sending: { pos: [-0.75, 1.8, -0.85], look: [1.4, 0.72, -3.05], fov: 50, p: { pos: [0.2, 1.7, -1.0], look: [1.6, 0.72, -3.0], fov: 66 } },
+const EYE = 1.5, SIT_EYE = 1.12;
+const clamp = THREE.MathUtils.clamp;
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const yawTo = (dx, dz) => Math.atan2(-dx, -dz);   // 카메라가 (dx,dz) 쪽을 보는 yaw
+const START = { pos: [-1.8, EYE + 0.2, -0.3], look: [0.35, 0.7, -3.6], fov: 44, p: { pos: [-2.2, EYE, -1.9], look: [1.27, 0.42, -3.55], fov: 68 } };
+const S0 = () => (isPortrait() ? START.p : START);
+const rig = {
+  pos: new THREE.Vector3(), yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, fov: 42, tFov: 42, eye: EYE,
+  target: null, bob: 0, moving: 0,
+  // 궤도(쓰기·읽기)
+  orbit: null,   // { center, r, theta, phi, tr, ttheta, tphi, min, max, phiMin, phiMax, thMin, thMax }
 };
-const V = (name) => { const v = VIEWS[name]; return isPortrait() && v.p ? v.p : v; };
-const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 42, yaw: 0, pitch: 0, tyaw: 0, tpitch: 0 };
-let viewName = 'overview';
-function snapView(name) { const v = V(name); viewName = name; cam.pos.set(...v.pos); cam.look.set(...v.look); cam.fov = v.fov; }
+function aimAt(look) {
+  const d = new THREE.Vector3().subVectors(look, rig.pos);
+  rig.yaw = rig.tYaw = Math.atan2(-d.x, -d.z);
+  rig.pitch = rig.tPitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
+}
+function placeStart() {
+  const s = S0(); rig.pos.set(...s.pos); rig.eye = s.pos[1]; aimAt(new THREE.Vector3(...s.look)); rig.fov = rig.tFov = s.fov;
+}
 
-/* ---------- 움직임 ---------- */
-const easeIO = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
-const easeOut = (k) => 1 - Math.pow(1 - k, 3);
+// 걷는 범위: 방 안 + 뒷벽 통로(통로 끝까지 가면 원래 비밀독서구역으로). 책상·의자는 피해 간다
+const R = 0.26;
+const OBST = [
+  // [x0, z0, x1, z1] 책상
+  [T.x - T.w / 2, T.z - T.d / 2, T.x + T.w / 2, T.z + T.d / 2],
+];
+const CHAIRS = [[WC.x, WC.z, 0.46], [RC.x, RC.z, 0.46]];
+const D = LAYOUT.door;
+function limit(p) {
+  const inDoor = p.x > D.x - D.R + 0.3 && p.x < D.x + D.R - 0.3;
+  p.x = clamp(p.x, -ROOM.x + 0.3, ROOM.x - 0.3);
+  p.z = clamp(p.z, inDoor ? ROOM.z1 - ROOM.wt - 0.5 : ROOM.z1 + 0.35, ROOM.z0 - 0.35);
+  if (p.z < ROOM.z1 + 0.3) p.x = clamp(p.x, D.x - D.R + 0.3, D.x + D.R - 0.3);   // 통로 안에서는 통로 폭 안으로
+  for (const [x0, z0, x1, z1] of OBST) {
+    if (p.x > x0 - R && p.x < x1 + R && p.z > z0 - R && p.z < z1 + R) {
+      const d = [p.x - (x0 - R), (x1 + R) - p.x, p.z - (z0 - R), (z1 + R) - p.z];
+      const k = d.indexOf(Math.min(...d));
+      if (k === 0) p.x = x0 - R; else if (k === 1) p.x = x1 + R; else if (k === 2) p.z = z0 - R; else p.z = z1 + R;
+    }
+  }
+  for (const [cx, cz, cr] of CHAIRS) {
+    const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz), m = cr + R * 0.6;
+    if (d < m) { const k = m / Math.max(d, 1e-4); p.x = cx + dx * k; p.z = cz + dz * k; }
+  }
+  return p;
+}
+const fwd = () => new THREE.Vector3(-Math.sin(rig.yaw), 0, -Math.cos(rig.yaw));
+function nudge(dist) {
+  const f = fwd();
+  let lead = 0;
+  if (rig.target) lead = (rig.target.x - rig.pos.x) * f.x + (rig.target.z - rig.pos.z) * f.z;
+  if (Math.sign(lead) !== Math.sign(dist)) lead = 0;
+  lead = clamp(lead + dist, -1.3, 1.3);
+  rig.target = limit(new THREE.Vector3(rig.pos.x + f.x * lead, 0, rig.pos.z + f.z * lead));
+  rig.tPitch = clamp(rig.tPitch, -0.32, 0.2);
+}
+function walkTo(x, z) { rig.target = limit(new THREE.Vector3(x, 0, z)); }
+
+/* ---------- 움직임(부드럽게: 사인 곡선, 넉넉한 시간) ---------- */
+const easeIO = (k) => -(Math.cos(Math.PI * k) - 1) / 2;
+const easeOut = (k) => Math.sin((k * Math.PI) / 2);
 const tweens = new Set();
 function tween(sec, fn, ease = easeIO) {
   return new Promise((res) => {
-    const dur = (reduced ? Math.min(sec, 0.12) : sec) * 1000;
+    const dur = (reduced ? Math.min(sec, 0.15) : sec) * 1000;
     tweens.add({ t0: performance.now(), dur, fn, ease, res });
   });
 }
-const wait = (sec) => tween(sec, () => {});
-function moveCam(name, sec = 0.6) {
-  const v = V(name); viewName = name;
-  const p0 = cam.pos.clone(), l0 = cam.look.clone(), f0 = cam.fov;
-  const p1 = new THREE.Vector3(...v.pos), l1 = new THREE.Vector3(...v.look);
-  cam.tyaw = 0; cam.tpitch = 0;
-  return tween(sec, (k) => { cam.pos.lerpVectors(p0, p1, k); cam.look.lerpVectors(l0, l1, k); cam.fov = f0 + (v.fov - f0) * k; });
+// 카메라를 지금 모습에서 목표 모습(위치·바라볼 곳·렌즈)으로. 그동안 조작은 막는다
+let camFly = null;
+function flyCam(pos, look, fov, sec, ease = easeIO, path) {
+  const p0 = camera.position.clone(), q0 = camera.quaternion.clone(), f0 = camera.fov;
+  const tmpCam = new THREE.Object3D(); tmpCam.position.copy(pos); tmpCam.lookAt(look);
+  // Object3D.lookAt은 +z를 향하게 하므로 카메라처럼 −z를 향하도록 뒤집는다
+  tmpCam.rotateY(Math.PI);
+  const q1 = tmpCam.quaternion.clone();
+  camFly = { k: 0 };
+  return tween(sec, (k) => {
+    camFly.k = k;
+    camera.position.lerpVectors(p0, pos, k);
+    if (path) path(k, camera.position);
+    camera.quaternion.slerpQuaternions(q0, q1, k);
+    camera.fov = f0 + (fov - f0) * k; camera.updateProjectionMatrix();
+  }, ease).then(() => { camFly = null; });
 }
 // 물체를 a → b로(포물선 높이 arc). 회전은 y축만
-function fly(obj, from, to, sec, arc = 0, extra) {
+function fly(obj, from, to, sec, arc = 0, extra, ease = easeIO) {
   const q0 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, from.ry, 0));
   const q1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, to.ry, 0));
   return tween(sec, (k) => {
@@ -146,39 +194,60 @@ function fly(obj, from, to, sec, arc = 0, extra) {
     obj.position.y += Math.sin(Math.PI * k) * arc;
     obj.quaternion.slerpQuaternions(q0, q1, k);
     extra?.(k);
-  });
+  }, ease);
 }
 
 /* ---------- 상태 ---------- */
-// overview · seatWrite · writing · sending · seatRead · reading
-let mode = 'overview', busy = false;
+// walk(걷기) · seat(앉음: seatWrite/seatRead) · writing · sending · reading
+let mode = 'walk', busy = false, seat = null;
 function setMode(m) {
-  mode = m; app.dataset.mode = m;
-  $('stand').hidden = m === 'overview';
+  mode = m; app.dataset.mode = m === 'walk' ? 'overview' : m;
+  $('stand').hidden = m === 'walk';
   $('writer').hidden = m !== 'writing';
   $('reader').hidden = m !== 'reading';
-  $('spots').setAttribute('aria-hidden', m === 'overview' ? 'false' : 'true');
+  $('spots').setAttribute('aria-hidden', m === 'walk' ? 'false' : 'true');
+}
+const chairOf = (which) => (which === 'write' ? WC : RC);
+const chairFwd = (c) => new THREE.Vector2(Math.sin(c.ry), Math.cos(c.ry));
+function seatPose(which) {
+  const c = chairOf(which), f = chairFwd(c);
+  const pos = new THREE.Vector3(c.x + f.x * 0.04, SIT_EYE, c.z + f.y * 0.04);
+  // 앉은 눈으로 책상을 내려다보는 자연스러운 각도(약 −20°)
+  // 쓰는 자리: 책상 너머 벽감까지 보이게 살짝만 내려다본다 · 읽는 자리: 책상 끝을 더 내려다본다
+  const drop = which === 'write' ? 0.24 : 0.34;
+  const look = new THREE.Vector3(pos.x + f.x, pos.y - drop, pos.z + f.y);
+  return { pos, look, yaw: yawTo(f.x, f.y), pitch: -Math.atan(drop), fov: isPortrait() ? 68 : 56 };
 }
 
+// 앉기: 의자 등 뒤로 걸어가 몸을 돌리고(1.1 s) → 천천히 내려앉는다(1.0 s, 끝에 살짝 가라앉음)
 async function sit(which) {
   if (busy) return;
-  // 읽는 자리에 앉는다 = 읽고 싶다: 방명록이 받침에서 책상으로 와서 바로 펼쳐진다(방을 가로지르지 않는다)
-  if (which === 'read') return openBook();
-  if (mode === 'writing') closeWriting(true);
-  if (mode === 'reading') await closeBook();
-  busy = true;
-  setMode(which === 'write' ? 'seatWrite' : 'seatRead');
-  await moveCam(which === 'write' ? 'seatWrite' : 'seatRead', 0.85);
+  if (mode === 'writing') closeWriting();
+  if (mode === 'reading') await closeBook(true);
+  if (mode === 'seat' && seat === which) return;
+  busy = true; rig.target = null;
+  const c = chairOf(which), f = chairFwd(c), sp = seatPose(which);
+  const above = new THREE.Vector3(c.x - f.x * 0.12, EYE - 0.06, c.z - f.y * 0.12);
+  const lookAhead = new THREE.Vector3(above.x + f.x * 2, 0.95, above.z + f.y * 2);
+  setMode('seat'); seat = which;
+  await flyCam(above, lookAhead, sp.fov, 1.15);
+  await flyCam(sp.pos, sp.look, sp.fov, 1.0, easeIO, (k, p) => { p.y -= Math.sin(Math.PI * k) * 0.035; });
+  rig.pos.copy(sp.pos); rig.eye = SIT_EYE; aimAt(sp.look); rig.fov = rig.tFov = sp.fov;
   busy = false;
-  $('stand').focus({ preventScroll: true });
+  if (which === 'read') openBook();
 }
+// 일어나기: 앉은 자리에서 그대로 일어나 의자 뒤로 반 걸음(같은 방향을 본 채로) → 다시 걷기
 async function stand() {
-  if (busy) return;
-  if (mode === 'writing') closeWriting(true);
-  if (mode === 'reading') await closeBook();
+  if (busy || mode === 'walk' || mode === 'sending') return;
+  if (mode === 'writing') closeWriting();
+  if (mode === 'reading') await closeBook(true);
   busy = true;
-  setMode('overview');
-  await moveCam('overview', 0.85);
+  const c = chairOf(seat), f = chairFwd(c);
+  const p = limit(new THREE.Vector3(c.x - f.x * 0.62, 0, c.z - f.y * 0.62)); p.y = EYE;
+  const look = new THREE.Vector3(p.x + f.x * 2.2, 0.85, p.z + f.y * 2.2);
+  await flyCam(p, look, isPortrait() ? 68 : 46, 1.1, easeIO, (k, q) => { q.y += Math.sin(Math.PI * k) * 0.03; });
+  rig.pos.copy(p); rig.eye = EYE; aimAt(look); rig.fov = rig.tFov = camera.fov;
+  setMode('walk'); seat = null;
   busy = false;
 }
 
@@ -211,26 +280,50 @@ function syncForm() {
 form.addEventListener('input', syncForm);
 form.addEventListener('change', syncForm);
 
+// 쓰기·읽기 궤도: 가운데 물체를 위에서 내려다보는 각도에서 시작. 끌면 돌려 보고, 휠로 다가가고 멀어진다
+function orbitPose(o) {
+  const st = Math.sin(o.theta);
+  const pos = new THREE.Vector3(o.center.x + st * Math.sin(o.phi) * o.r, o.center.y + Math.cos(o.theta) * o.r, o.center.z + st * Math.cos(o.phi) * o.r);
+  return pos;
+}
+function startOrbit(o) {
+  o.tr = o.r; o.ttheta = o.theta; o.tphi = o.phi;
+  rig.orbit = o;
+  return flyCam(orbitPose(o), o.center, o.fov, o.sec ?? 1.4);
+}
+function writeOrbit() {
+  // 쓰는 사람 쪽(−x)에서 거의 위로 내려다본다. 넓은 화면은 입력 카드를 피해 종이를 왼쪽으로, 세로 화면은 위쪽으로
+  const c = PAGE_DESK.pos.clone();
+  if (narrow()) c.x -= 0.1; else c.z += 0.13;
+  return { kind: 'write', center: c, r: narrow() ? 0.62 : 0.56, theta: 0.32, phi: -Math.PI / 2, fov: narrow() ? 60 : 42,
+    min: 0.3, max: 0.9, thMin: 0.08, thMax: 0.75, phiMin: -Math.PI / 2 - 0.6, phiMax: -Math.PI / 2 + 0.6 };
+}
+
 let pageAtDesk = false;
 async function openWriting() {
   if (busy) return;
-  if (mode === 'reading') await closeBook();
+  if (mode === 'reading') await closeBook(true);
+  if (!(mode === 'seat' && seat === 'write')) await sit('write');
   busy = true;
-  const fromSeat = mode === 'seatWrite';
   setMode('writing');
   syncForm();
-  // 종이를 트레이에서 쓰는 자리로(짧게) — 카메라도 동시에 쓰는 자리로 다가간다(0.55 s)
-  const camGo = moveCam('writing', fromSeat ? 0.55 : 0.9);
-  if (!pageAtDesk) { await fly(page, PAGE_TRAY(), PAGE_DESK, 0.55, 0.06); pageAtDesk = true; }
+  // 종이가 트레이에서 쓰는 자리로 천천히 미끄러져 오고, 시선도 함께 종이 위로(1.4 s)
+  const camGo = startOrbit({ ...writeOrbit(), sec: 1.5 });
+  if (!pageAtDesk) { await fly(page, PAGE_TRAY(), PAGE_DESK, 1.3, 0.05); pageAtDesk = true; }
   await camGo;
   busy = false;
   if (!narrow()) bodyIn.focus({ preventScroll: true });
 }
-function closeWriting(keepText) {
-  // 입력은 지우지 않는다(실패하거나 잠시 일어나도 글이 남는다). 종이는 책상 위에 그대로 둔다
-  $('err').textContent = '';
-  setMode('seatWrite');
-  if (!keepText) bodyIn.value = '';
+// 입력은 지우지 않는다(실패하거나 잠시 고개를 들어도 글이 남는다). 종이는 책상 위에 그대로
+function closeWriting() { $('err').textContent = ''; rig.orbit = null; setMode('seat'); }
+async function backToSeat() {
+  if (busy) return;
+  busy = true;
+  if (mode === 'writing') closeWriting();
+  const sp = seatPose(seat);
+  await flyCam(sp.pos, sp.look, sp.fov, 1.2);
+  rig.pos.copy(sp.pos); aimAt(sp.look); rig.fov = rig.tFov = sp.fov;
+  busy = false;
 }
 
 let backend = null, pages = [], level = 0;
@@ -269,34 +362,35 @@ form.addEventListener('submit', async (e) => {
 
 // 저장이 확인된 종이: 책상에서 들려 → 받침의 방명록으로 날아가 → 표지가 열리고 → 끼워지고 → 닫힌다(약 3초)
 async function sendPage() {
-  mode = 'sending'; app.dataset.mode = 'sending';
-  const camGo = moveCam('sending', 0.8);
-  const up = { pos: PAGE_DESK.pos.clone().add(new THREE.Vector3(0, 0.22, 0.05)), ry: PAGE_DESK.ry };
-  await fly(page, PAGE_DESK, up, 0.45, 0, (k) => { page.rotation.x = -0.35 * k; });
-  // 책 위 도착 지점: 종이 덩어리 윗면 바로 위, 책과 같은 방향(종이 위쪽 = 책 페이지 위쪽)
+  mode = 'sending'; app.dataset.mode = 'sending'; rig.orbit = null;
+  const vp = isPortrait() ? { pos: [0.2, 1.75, -1.0], look: [1.6, 0.72, -3.0], fov: 64 } : { pos: [-0.75, 1.8, -0.85], look: [1.4, 0.72, -3.05], fov: 50 };
+  const camGo = flyCam(new THREE.Vector3(...vp.pos), new THREE.Vector3(...vp.look), vp.fov, 1.2);
+  const up = { pos: PAGE_DESK.pos.clone().add(new THREE.Vector3(0, 0.22, -0.05)), ry: PAGE_DESK.ry };
+  await fly(page, PAGE_DESK, up, 0.6, 0, (k) => { page.rotation.x = -0.35 * k; });
   const top = book.localToWorld(new THREE.Vector3(0.02, BU.top + 0.003, 0));
-  const above = { pos: top.clone().add(new THREE.Vector3(0, 0.16, 0)), ry: book.rotation.y + Math.PI };
-  const coverOpen = tween(0.55, (k) => { BU.hinge.rotation.z = Math.PI * 0.94 * k; }, easeOut);
-  await fly(page, up, above, 0.85, 0.28, (k) => { page.rotation.x = -0.35 * (1 - k) + Math.sin(Math.PI * k) * 0.25; page.rotation.z = Math.sin(Math.PI * k) * -0.18; });
+  const above = { pos: top.clone().add(new THREE.Vector3(0, 0.16, 0)), ry: book.rotation.y };   // 종이 위쪽 = 책 페이지 위쪽
+  const coverOpen = tween(0.8, (k) => { BU.hinge.rotation.z = Math.PI * 0.94 * k; }, easeOut);
+  await fly(page, up, above, 1.0, 0.28, (k) => { page.rotation.x = -0.35 * (1 - k) + Math.sin(Math.PI * k) * 0.25; page.rotation.z = Math.sin(Math.PI * k) * -0.18; });
   await coverOpen;
   await camGo;
-  await fly(page, above, { pos: top, ry: above.ry }, 0.4, 0, (k) => { page.rotation.x = 0; page.rotation.z = 0; });
+  await fly(page, above, { pos: top, ry: above.ry }, 0.5, 0, (k) => { page.rotation.x = 0; page.rotation.z = 0; });
   page.visible = false;
   setLevel(level + 1, true);
-  const mine = traces.addMine();   // 벽감에 조용히 한 조각
-  if (mine) { const s = mine.userData.s; tween(0.6, (k) => mine.scale.setScalar(s * k), easeOut); }
-  await tween(0.5, (k) => { BU.hinge.rotation.z = Math.PI * 0.94 * (1 - k); });
-  // 다음 방문자를 위한 새 종이가 트레이에
+  const mine = traces.addMine();   // 벽감에 스티커 하나 조용히
+  if (mine) { const s = mine.userData.s; tween(0.8, (k) => mine.scale.set(s * k, s * k, 0.12), easeOut); }
+  await tween(0.7, (k) => { BU.hinge.rotation.z = Math.PI * 0.94 * (1 - k); });
   pageAtDesk = false; placePage(PAGE_TRAY());
   writeTex.draw({ eyebrow: 'ONE PAGE', placeholder: '당신의 한 페이지를 남겨주세요.', name: '익명', size: 44 });
   page.visible = true;
-  setMode('seatWrite');
-  await moveCam('seatWrite', 0.7);
+  setMode('seat'); seat = 'write';
+  const sp = seatPose('write');
+  await flyCam(sp.pos, sp.look, sp.fov, 1.3);
+  rig.pos.copy(sp.pos); aimAt(sp.look); rig.fov = rig.tFov = sp.fov;
 }
 function setLevel(lv, bump = false) {
   level = Math.max(0, Math.min(12, lv | 0));
   BU.setLevel(level);
-  if (bump) { const s = book.scale.y; tween(0.35, (k) => { book.scale.y = s * (1 + Math.sin(Math.PI * k) * 0.06); }); }
+  if (bump) { const s = book.scale.y; tween(0.5, (k) => { book.scale.y = s * (1 + Math.sin(Math.PI * k) * 0.06); }); }
 }
 
 /* ---------- 읽기 ---------- */
@@ -315,28 +409,43 @@ function drawSpread() {
   $('prev').disabled = idx <= 0;
   $('next').disabled = idx >= pages.length - 1;
 }
+function readOrbit() {
+  // 읽는 의자 쪽(+x)에서 펼친 책을 거의 바로 위에서 내려다본다
+  // 가운데 = 펼친 두 면의 한가운데(책등). 책의 로컬 −x(책등) 방향으로 반 폭만큼
+  const spine = new THREE.Vector3(-BU.W / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), BOOK_DESK.ry);
+  // 세로 화면: 펼친 두 면이 화면보다 넓으므로 글이 있는 오른쪽 면을 화면 가득(두 손가락으로 벌리거나 모아 조절)
+  const P = isPortrait();
+  return { kind: 'read', center: (P ? BOOK_DESK.pos.clone() : BOOK_DESK.pos.clone().add(spine)).add(new THREE.Vector3(0, 0.02, 0)), r: P ? 0.82 : 0.95, theta: P ? 0.08 : 0.2, phi: Math.PI / 2 + 0.22, fov: P ? 58 : 44,
+    min: 0.35, max: 1.5, thMin: 0.05, thMax: 0.95, phiMin: Math.PI / 2 + 0.22 - 0.7, phiMax: Math.PI / 2 + 0.22 + 0.7 };
+}
 async function openBook() {
   if (busy) return;
-  if (mode === 'writing') closeWriting(true);
+  if (mode === 'writing') closeWriting();
+  if (!(mode === 'seat' && seat === 'read')) { await sit('read'); return; }   // 앉은 뒤 sit()이 다시 부른다
   busy = true;
   setMode('reading');
   idx = 0; drawSpread();
-  // 방명록이 받침에서 읽는 자리 앞 책상으로 온다(방문객이 방을 가로지르지 않는다)
-  const camGo = moveCam('reading', 0.9);
-  await fly(book, BOOK_LEDGE, BOOK_DESK, 0.9, 0.32);
+  // 방명록이 받침에서 읽는 자리 앞 책상으로 천천히 날아와(1.6 s) 표지가 열린다(1.2 s)
+  const camGo = startOrbit({ ...readOrbit(), sec: 1.8 });
+  await fly(book, BOOK_LEDGE, BOOK_DESK, 1.6, 0.3);
   bookOut = true;
-  await tween(0.6, (k) => { BU.hinge.rotation.z = Math.PI * 0.985 * k; }, easeOut);
+  await tween(1.2, (k) => { BU.hinge.rotation.z = Math.PI * 0.985 * k; });
   await camGo;
   busy = false;
   $('next').focus({ preventScroll: true });
 }
-async function closeBook() {
+async function closeBook(quiet) {
   if (!bookOut) return;
   busy = true;
-  await tween(0.45, (k) => { BU.hinge.rotation.z = Math.PI * 0.985 * (1 - k); });
-  await fly(book, { pos: book.position.clone(), ry: book.rotation.y }, BOOK_LEDGE, 0.8, 0.3);
+  rig.orbit = null;
+  const sp = seatPose('read');
+  const camGo = quiet ? null : flyCam(sp.pos, sp.look, sp.fov, 1.6);
+  await tween(0.9, (k) => { BU.hinge.rotation.z = Math.PI * 0.985 * (1 - k); });
+  await fly(book, { pos: book.position.clone(), ry: book.rotation.y }, BOOK_LEDGE, 1.3, 0.28);
+  await camGo;
+  if (!quiet) { rig.pos.copy(sp.pos); aimAt(sp.look); rig.fov = rig.tFov = sp.fov; }
   bookOut = false;
-  setMode('seatRead');
+  setMode('seat');
   busy = false;
 }
 async function turn(dir) {
@@ -348,14 +457,8 @@ async function turn(dir) {
   const cur = pages[idx], nxt = pages[j];
   const drawP = (tex, p, i) => tex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${i + 1} / ${pages.length}`, size: 50 });
   lh.visible = true;
-  if (dir > 0) {   // 지금 장이 왼쪽으로 넘어가고, 아래에서 다음 장이 드러난다
-    drawP(leafTex, cur, idx); idx = j; drawSpread();
-    await tween(0.65, (k) => { lh.rotation.z = Math.PI * 0.985 * k; });
-  } else {         // 앞 장이 왼쪽에서 넘어와 덮는다
-    drawP(leafTex, nxt, j); lh.rotation.z = Math.PI * 0.985;
-    await tween(0.65, (k) => { lh.rotation.z = Math.PI * 0.985 * (1 - k); });
-    idx = j; drawSpread();
-  }
+  if (dir > 0) { drawP(leafTex, cur, idx); idx = j; drawSpread(); await tween(0.95, (k) => { lh.rotation.z = Math.PI * 0.985 * k; }); }
+  else { drawP(leafTex, nxt, j); lh.rotation.z = Math.PI * 0.985; await tween(0.95, (k) => { lh.rotation.z = Math.PI * 0.985 * (1 - k); }); idx = j; drawSpread(); }
   lh.visible = false; lh.rotation.z = 0;
   busy = false;
 }
@@ -363,59 +466,147 @@ $('prev').addEventListener('click', () => turn(-1));
 $('next').addEventListener('click', () => turn(1));
 $('closeBook').addEventListener('click', () => { if (!busy) closeBook(); });
 
-/* ---------- 고르기(마우스·터치·키보드) ---------- */
+/* ---------- 원래 비밀독서구역으로(뒷벽 통로) ---------- */
+let leaving = false;
+function leaveToRoom() {
+  if (leaving) return;
+  leaving = true;
+  $('fade').classList.add('on');
+  setTimeout(() => { location.href = '../experience/index.html?return=room'; }, reduced ? 50 : 700);
+}
+
+/* ---------- 고르기·걷기(마우스·터치·키보드) ---------- */
 const PICK = new Map();
 const tag = (obj, key) => obj.traverse((o) => { if (o.isMesh) PICK.set(o, key); });
 tag(writeChair, 'writeChair'); tag(readChair, 'readChair'); tag(tray, 'tray'); tag(page, 'page'); tag(book, 'book');
 const LABEL = { writeChair: '쓰는 자리', readChair: '읽는 자리', tray: '빈 페이지', page: '빈 페이지', book: '방명록' };
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-
-function pickAt(x, y) {
+function hitAt(x, y) {
   ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  // 벽·가구에 가려진 물체는 고르지 않는다: 가장 가까이 맞은 것이 고를 수 있는 물체일 때만
-  const first = ray.intersectObjects([world.group, page], true).find((h) => h.object.visible && h.object.material?.visible !== false);
-  return first ? PICK.get(first.object) ?? null : null;
+  return ray.intersectObjects([world.group, page], true).find((h) => h.object.visible && h.object.material?.visible !== false && !(h.object.material?.transparent && !h.object.material?.alphaTest)) || null;
 }
+const pickKey = (h) => (h ? PICK.get(h.object) ?? null : null);
 function act(key) {
   if (busy) return;
-  if (key === 'writeChair') return mode === 'seatWrite' ? openWriting() : sit('write');
-  if (key === 'readChair') return mode === 'seatRead' ? openBook() : sit('read');
+  if (key === 'writeChair') return mode === 'seat' && seat === 'write' ? openWriting() : sit('write');
+  if (key === 'readChair') return sit('read');
   if (key === 'tray' || key === 'page') return mode === 'writing' ? null : openWriting();
   if (key === 'book') return mode === 'reading' ? null : openBook();
 }
+// 바닥을 가리키면 걸어갈 자리를 보여 주는 고리(원래 방과 같은 표시)
+const ringMark = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 48), new THREE.MeshBasicMaterial({ color: '#4F5F4C', transparent: true, opacity: 0, depthWrite: false }));
+ringMark.rotation.x = -Math.PI / 2; scene.add(ringMark);
+function floorTarget(h) {
+  const d = new THREE.Vector3(h.point.x - rig.pos.x, 0, h.point.z - rig.pos.z);
+  if (d.length() > 1.4) d.setLength(1.4);
+  return limit(new THREE.Vector3(rig.pos.x + d.x, 0, rig.pos.z + d.z));
+}
 let down = null;
-canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, yaw: cam.tyaw, pitch: cam.tpitch, moved: false }; canvas.setPointerCapture(e.pointerId); });
+const touches = new Map();
+let pinch = null;
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; if (down) down.moved = true; return; }
+  down = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false };
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 끝난 포인터 */ }
+});
 canvas.addEventListener('pointermove', (e) => {
-  if (down) {
-    const dx = e.clientX - down.x, dy = e.clientY - down.y;
-    if (Math.hypot(dx, dy) > 6) down.moved = true;
-    // 둘러보기: 좌우 ±0.32 rad, 위아래 ±0.14 rad만(장면의 구도를 잃지 않게)
-    if (down.moved && (mode === 'overview' || mode === 'seatWrite' || mode === 'seatRead')) {
-      cam.tyaw = THREE.MathUtils.clamp(down.yaw - dx * 0.0022, -0.32, 0.32);
-      cam.tpitch = THREE.MathUtils.clamp(down.pitch - dy * 0.0016, -0.14, 0.14);
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && touches.size === 2) {   // 두 손가락: 걷기(앞뒤) · 읽기·쓰기에서는 다가가기
+    const [a, b] = [...touches.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    zoomStep((pinch.d - d) * 0.01);
+    pinch.d = d; return;
+  }
+  if (down && e.pointerId === down.id) {
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) down.moved = true;
+    const dx = e.clientX - down.lx, dy = e.clientY - down.ly;
+    down.lx = e.clientX; down.ly = e.clientY;
+    if (!down.moved || busy || camFly) return;
+    if (rig.orbit) {   // 쓰기·읽기: 패키지 보기처럼 돌려 본다
+      const o = rig.orbit;
+      o.tphi = clamp(o.tphi - dx * 0.005, o.phiMin, o.phiMax);
+      o.ttheta = clamp(o.ttheta - dy * 0.004, o.thMin, o.thMax);
+    } else if (mode === 'walk' || mode === 'seat') {   // 둘러보기(앉아 있을 때는 몸을 돌리지 않는 범위 안에서)
+      rig.tYaw -= dx * 0.0035;   // 원래 3D 독서구역처럼: 오른쪽으로 끌면 오른쪽을, 아래로 끌면 아래를 본다
+      rig.tPitch = clamp(rig.tPitch - dy * 0.0028, -0.75, 0.45);
+      if (mode === 'seat') { const sp = seatPose(seat); rig.tYaw = sp.yaw + clamp(wrapPi(rig.tYaw - sp.yaw), -1.1, 1.1); }
     }
+    ringMark.material.opacity = 0;
     return;
   }
   if (e.pointerType !== 'mouse') return;
-  const k = mode === 'writing' || mode === 'sending' ? null : pickAt(e.clientX, e.clientY);
+  const h = mode === 'sending' || busy ? null : hitAt(e.clientX, e.clientY);
+  const k = mode === 'writing' ? null : pickKey(h);
   app.dataset.hover = k ? '1' : '';
-  const h = $('hint');
-  if (k) { h.textContent = LABEL[k]; h.style.left = e.clientX + 'px'; h.style.top = e.clientY + 'px'; h.classList.add('on'); } else h.classList.remove('on');
+  const hint = $('hint');
+  if (k) { hint.textContent = LABEL[k]; hint.style.left = e.clientX + 'px'; hint.style.top = e.clientY + 'px'; hint.classList.add('on'); } else hint.classList.remove('on');
+  if (!k && h?.object.userData.floor && (mode === 'walk' || mode === 'seat')) { const t = floorTarget(h); ringMark.position.set(t.x, 0.006, t.z); ringMark.material.opacity = 0.5; canvas.style.cursor = 'pointer'; }
+  else { ringMark.material.opacity = 0; canvas.style.cursor = k ? 'pointer' : 'grab'; }
 });
-canvas.addEventListener('pointerup', (e) => {
-  const d = down; down = null;
-  if (!d || d.moved) return;
-  const k = pickAt(e.clientX, e.clientY);
+function endPointer(e) {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = null;
+  const d = down;
+  if (!d || d.id !== e.pointerId) return;
+  down = null;
+  if (e.type === 'pointercancel' || d.moved || busy) return;
+  const h = hitAt(e.clientX, e.clientY), k = pickKey(h);
   $('hint').classList.remove('on');
-  if (k) act(k);
-});
-canvas.addEventListener('pointercancel', () => { down = null; });
-$('spots').addEventListener('click', (e) => { const b = e.target.closest('button[data-go]'); if (b) sit(b.dataset.go); });
+  if (k) { act(k); return; }
+  if (mode === 'reading' && h && h.object.parent && book.children.includes(h.object.parent) === false) { /* 책 밖을 눌러도 그대로 */ }
+  // 바닥: 걷기(앉아 있으면 일어나서 걸어간다)
+  if (h?.object.userData.floor && (mode === 'walk' || mode === 'seat')) {
+    const t = floorTarget(h);
+    if (mode === 'seat') stand().then(() => walkTo(t.x, t.z)); else walkTo(t.x, t.z);
+    ringMark.material.opacity = 0;
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', () => { ringMark.material.opacity = 0; $('hint').classList.remove('on'); });
+
+// 휠: 걷기(앞뒤 한 걸음) · 앉아서 뒤로 굴리면 일어나기 · 읽기·쓰기에서는 다가가고 멀어지기(가장 멀리서 더 굴리면 의자로 돌아온다)
+let wheelAcc = 0;
+function zoomStep(dir) {   // dir > 0 = 멀어지기/뒤로
+  if (busy || camFly) return;
+  if (rig.orbit) {
+    const o = rig.orbit;
+    if (dir > 0 && o.tr >= o.max - 1e-3) { if (mode === 'reading') closeBook(); else backToSeat(); return; }
+    o.tr = clamp(o.tr * (dir > 0 ? 1.14 : 1 / 1.14), o.min, o.max);
+    return;
+  }
+  if (mode === 'seat') { if (dir > 0) stand(); return; }
+  if (mode === 'walk') nudge(-Math.sign(dir) * 0.6);
+}
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  if (Math.sign(unit) !== Math.sign(wheelAcc)) wheelAcc = 0;
+  wheelAcc += unit;
+  if (Math.abs(wheelAcc) < 60 && Math.abs(unit) < 40) return;
+  const dir = Math.sign(wheelAcc); wheelAcc = 0;
+  zoomStep(dir);
+}, { passive: false });
+$('spots').addEventListener('click', (e) => { const b = e.target.closest('button[data-go]'); if (b) (b.dataset.go === 'read' ? openBook() : sit('write')); });
 $('stand').addEventListener('click', stand);
+const keys = { f: 0, t: 0 };
 addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (mode === 'reading') closeBook(); else if (mode === 'writing') closeWriting(true); else if (mode !== 'overview') stand(); }
-  if (mode === 'reading' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) turn(e.key === 'ArrowRight' ? 1 : -1);
+  if (e.target.closest('input,textarea')) return;
+  if (e.key === 'Escape') { if (mode === 'reading') closeBook(); else if (mode === 'writing') backToSeat(); else if (mode === 'seat') stand(); }
+  if (mode === 'reading' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { turn(e.key === 'ArrowRight' ? 1 : -1); return; }
+  if (mode === 'walk') {
+    if (e.key === 'ArrowUp' || e.key === 'w') keys.f = 1;
+    if (e.key === 'ArrowDown' || e.key === 's') keys.f = -1;
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.t = 1;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.t = -1;
+  }
+});
+addEventListener('keyup', (e) => {
+  if (['ArrowUp', 'ArrowDown', 'w', 's'].includes(e.key)) keys.f = 0;
+  if (['ArrowLeft', 'ArrowRight', 'a', 'd'].includes(e.key)) keys.t = 0;
 });
 
 let toastTimer;
@@ -427,19 +618,25 @@ function toast(msg) {
 /* ---------- 화면 크기 · 루프 ---------- */
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
-  camera.aspect = innerWidth / innerHeight;
-  if (!busy) snapView(viewName);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
-
-// 처음: 짧게(약 1초) 자리 잡는 움직임만 — 긴 입장 연출 없이 바로 라운지
-snapView('overview');
-const q = new URLSearchParams(location.search).get('cam');
-if (q) { const v = q.split(',').map(Number); VIEWS.debug = { pos: v.slice(0, 3), look: v.slice(3, 6), fov: v[6] || 42 }; snapView('debug'); }
-else if (!reduced) { const v = V('overview'); cam.pos.set(v.pos[0] - 0.25, v.pos[1] + 0.12, v.pos[2] + 0.35); moveCam('overview', 1.0); }
 resize();
 
-const dir = new THREE.Vector3(), tmp = new THREE.Vector3();
+// 처음: 짧게(약 1초) 자리 잡는 움직임만 — 긴 입장 연출 없이 바로 라운지
+placeStart();
+const q = new URLSearchParams(location.search).get('cam');
+if (q) { const v = q.split(',').map(Number); rig.pos.set(v[0], v[1], v[2]); rig.eye = v[1]; aimAt(new THREE.Vector3(v[3], v[4], v[5])); rig.fov = rig.tFov = v[6] || 42; }
+else if (new URLSearchParams(location.search).get('from') === 'room') {
+  // 원래 방의 노란 아치 문으로 건너왔다: 뒷벽 통로 안에서 라운지 쪽을 보며 한 걸음 들어선다
+  rig.pos.set(D.x, EYE, ROOM.z1 + 0.05); rig.eye = EYE; aimAt(new THREE.Vector3(T.x, 0.8, T.z + 0.6)); rig.fov = rig.tFov = isPortrait() ? 68 : 50;
+  rig.target = limit(new THREE.Vector3(D.x - 0.1, 0, ROOM.z1 + 0.9));
+}
+else if (!reduced) { rig.pos.x -= 0.25; rig.pos.z += 0.3; rig.target = limit(new THREE.Vector3(rig.pos.x + 0.25, 0, rig.pos.z - 0.3)); }
+const hintEl = $('exploreHint');
+if (hintEl) { setTimeout(() => hintEl.classList.add('show'), 900); setTimeout(() => hintEl.classList.remove('show'), 7500); }
+
+const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 let last = performance.now();
 renderer.setAnimationLoop((now) => {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -448,17 +645,33 @@ renderer.setAnimationLoop((now) => {
     t.fn(t.ease(Math.max(0, k)));
     if (k >= 1) { tweens.delete(t); t.res(); }
   }
-  // 둘러보기 각도는 부드럽게 따라온다
-  cam.yaw += (cam.tyaw - cam.yaw) * Math.min(1, dt * 8);
-  cam.pitch += (cam.tpitch - cam.pitch) * Math.min(1, dt * 8);
-  camera.position.copy(cam.pos);
-  dir.subVectors(cam.look, cam.pos);
-  const dist = dir.length();
-  dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), cam.yaw);
-  const side = tmp.crossVectors(dir, camera.up).normalize();
-  dir.applyAxisAngle(side, cam.pitch);
-  camera.lookAt(tmp.copy(cam.pos).addScaledVector(dir, dist));
-  if (camera.fov !== cam.fov) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+  if (!camFly) {
+    if (rig.orbit) {
+      const o = rig.orbit, a = 1 - Math.exp(-5 * dt);
+      o.r += (o.tr - o.r) * a; o.theta += (o.ttheta - o.theta) * a; o.phi += (o.tphi - o.phi) * a;
+      camera.position.copy(orbitPose(o)); camera.lookAt(o.center);
+      if (Math.abs(camera.fov - o.fov) > 1e-3) { camera.fov = o.fov; camera.updateProjectionMatrix(); }
+    } else {
+      if (mode === 'walk') {
+        if (keys.t) rig.tYaw += keys.t * 0.9 * dt;
+        if (keys.f) nudge(keys.f * 1.25 * dt * 1.8);
+        if (rig.target) {
+          const dx = rig.target.x - rig.pos.x, dz = rig.target.z - rig.pos.z, dist = Math.hypot(dx, dz);
+          if (dist < 0.004) { rig.target = null; rig.moving = 0; }
+          else { const v = Math.min(1.25, dist * 2.4 + 0.05), step = Math.min(dist, v * dt); rig.pos.x += (dx / dist) * step; rig.pos.z += (dz / dist) * step; rig.moving = v; rig.bob += step * 7.5; }
+        } else rig.moving *= 0.9;
+        // 통로 끝까지 걸어가면 원래 비밀독서구역으로
+        if (rig.pos.z < ROOM.z1 - ROOM.wt * 0.5) leaveToRoom();
+      }
+      const k = 1 - Math.exp(-2.6 * dt);
+      rig.yaw += (rig.tYaw - rig.yaw) * k; rig.pitch += (rig.tPitch - rig.pitch) * k;
+      rig.fov += (rig.tFov - rig.fov) * (1 - Math.exp(-1.8 * dt));
+      const bobAmt = Math.min(1, rig.moving / 1.25) * 0.01;
+      camera.position.set(rig.pos.x, rig.eye + Math.sin(rig.bob) * bobAmt, rig.pos.z);
+      euler.set(rig.pitch, rig.yaw, 0); camera.quaternion.setFromEuler(euler);
+      if (Math.abs(camera.fov - rig.fov) > 1e-3) { camera.fov = rig.fov; camera.updateProjectionMatrix(); }
+    }
+  }
   renderer.render(scene, camera);
 });
 
@@ -469,7 +682,7 @@ async function refreshTrace() {
     if (d.trace) { setLevel(d.trace.leaves || 0); traces.setLevel(Math.max(d.trace.visits || 0, d.trace.leaves || 0)); }
   } catch (e) { /* 그대로 */ }
 }
-setMode('overview');
+setMode('walk');
 getBackend().then(async (b) => {
   backend = b;
   if (!b) { $('previewNote').hidden = false; return; }
@@ -478,4 +691,4 @@ getBackend().then(async (b) => {
 if (new URLSearchParams(location.search).get('from') === 'room') $('toRoom').href = '../experience/index.html?return=room';
 
 // 브라우저 확인용
-window.__lounge = { traces, THREE, scene, camera, world, cam, VIEWS, moveCam, snapView, act, setLevel, get mode() { return mode; }, get pages() { return pages; }, set pages(v) { pages = v; }, page, book, tweens };
+window.__lounge = { traces, THREE, scene, camera, world, rig, act, sit, stand, openBook, openWriting, setLevel, get mode() { return mode; }, get seat() { return seat; }, get pages() { return pages; }, set pages(v) { pages = v; }, page, book, tweens };

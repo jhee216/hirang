@@ -18,7 +18,8 @@ export const ROOM = { x: 2.6, z0: 0, z1: -5.6, h: 3.2, wt: 0.24 };
 // 가구 배치(m). 책상이 중심. 쓰는 의자는 책상 긴 변 뒤에서 앞(+z)을 보고, 읽는 의자는 책상 오른쪽 끝에서 비스듬히
 export const LAYOUT = {
   table: { x: -0.4, z: -3.15, w: 1.3, d: 0.72, h: 0.74 },
-  writeChair: { x: -0.4, z: -3.92, ry: 0 },             // 정면(+z)이 책상
+  // 두 의자는 책상 양 끝에서 마주 본다: 쓰는 의자(왼쪽 끝, +x를 봄) ↔ 읽는 의자(오른쪽 끝, 방 쪽으로 살짝 돌아앉음)
+  writeChair: { x: -1.47, z: -3.15, ry: Math.PI / 2 },
   readChair: { x: 0.82, z: -3.06, ry: -Math.PI / 2 + 0.26 },   // 책상 오른쪽 끝에서 책상을 향해, 방 쪽으로 살짝 돌아앉음
   door: { x: 1.45, R: 0.92, leg: 1.3 },                  // 뒷벽 통로(옛 방으로)
   alcove: { x: -0.4, R: 0.86, leg: 0.72, y: 0, depth: 0.26 },   // 쓰는 의자 뒤 라벤더 벽감
@@ -309,7 +310,7 @@ export function buildLounge({ sym, logoImg }) {
   const revealMat = mat('#F2E8D3', 0.95, { emissive: C.ivory, emissiveIntensity: 0.06 });
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(RX * 2 + 1, D + 6), floorMat);
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, cz - 2.6); floor.receiveShadow = true;
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, cz - 2.6); floor.receiveShadow = true; floor.userData.floor = true;
   group.add(floor);
   const ceil = sh(new THREE.Mesh(new THREE.BoxGeometry(RX * 2 + 0.6, 0.2, D + 0.4), wallMat));
   ceil.position.set(0, RH + 0.1, cz); group.add(ceil);
@@ -389,58 +390,65 @@ export function buildLounge({ sym, logoImg }) {
   const table = buildTable(); table.position.set(L.table.x, 0, L.table.z); group.add(table);
   const writeChair = buildChair(); writeChair.position.set(L.writeChair.x, 0, L.writeChair.z); writeChair.rotation.y = L.writeChair.ry; group.add(writeChair);
   const readChair = buildChair(); readChair.position.set(L.readChair.x, 0, L.readChair.z); readChair.rotation.y = L.readChair.ry; group.add(readChair);
-  const tray = buildTray(); tray.position.set(L.table.x - 0.47, L.table.h, L.table.z + 0.04); tray.rotation.y = 0.1; group.add(tray);
+  const tray = buildTray(); tray.position.set(L.table.x - 0.05, L.table.h, L.table.z - 0.2); tray.rotation.y = Math.PI / 2 + 0.12; group.add(tray);
   // 책등이 벽 쪽(+x), 앞표지는 방 쪽으로 열린다
   const book = buildGuestbook(); book.position.set(RX + 0.12, L.ledge.y + 0.004, ledgeZ); book.rotation.y = Math.PI - 0.1;
   group.add(book);
 
-  return { group, table, tray, book, writeChair, readChair, oldRoom: old };
+  return { group, floor, table, tray, book, writeChair, readChair, oldRoom: old };
 }
 
-/* ---------- 익명의 흔적: 라벤더 벽감 안쪽에 모이는 하이랑 심볼 모양 종이 조각 ---------- */
-// 단계(0~12)만 받는다. 조각 수는 단계마다 계단식으로 늘어 정확한 방문·글 수를 거꾸로 셀 수 없다.
-const TRACE_COUNT = [0, 3, 5, 7, 9, 12, 15, 18, 21, 24, 28, 32, 36];
-export function buildTraces(sym) {
+/* ---------- 익명의 흔적: 라벤더 벽감 안쪽에 다꾸처럼 붙은 스티커 ---------- */
+// 스티커 = 원본 하이랑 심볼 + 원본 패턴 무늬(assets/trace-glyphs.png, 패턴 시트에서 그대로 잘라 냄) + 흰 여백(trace-glyphs-edge.png).
+// 자리를 미리 정해 서로 떨어뜨려 붙인다. 단계(0~12)만 받아 계단식으로 늘어난다 — 정확한 수를 거꾸로 셀 수 없다.
+const TRACE_COUNT = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14];
+// [x(벽감 가운데 기준), y, 모양(0 = 심볼, 1~10 = 패턴), 크기(m), 기울기(도), 색]
+const STICKERS = [
+  [0.0, 1.38, 0, 0.17, -6, 0], [-0.36, 1.2, 3, 0.11, 12, 2], [0.37, 1.18, 1, 0.11, -14, 1],
+  [-0.6, 0.98, 0, 0.12, 8, 3], [0.6, 1.0, 8, 0.1, -8, 0], [-0.17, 1.02, 5, 0.085, 18, 1],
+  [0.19, 0.98, 0, 0.11, -10, 2], [0.0, 1.62 - 0.6, 9, 0.08, 4, 3], [-0.26, 1.47, 7, 0.08, 22, 3],
+  [0.27, 1.45, 2, 0.085, -20, 0], [-0.58, 1.24, 10, 0.075, -12, 1], [0.61, 1.25, 4, 0.08, 14, 2],
+  [-0.4, 0.86, 6, 0.08, -18, 0], [0.42, 0.84, 0, 0.1, 10, 1],
+];
+export function buildTraces() {
   const g = new THREE.Group();
   const L = LAYOUT.alcove, { z1, wt } = ROOM;
   g.position.set(L.x, 0, z1 - wt - L.depth + 0.004);
-  if (!sym) return { group: g, setLevel() {}, addMine() {} };
-  const SW = 0.075;
-  const P = ([u, v]) => new THREE.Vector2((u - 0.5) * SW, (sym.aspect - v) * SW - sym.aspect * SW / 2);
-  const shape = new THREE.Shape(sym.outer.map(P));
-  shape.holes = sym.holes.map((h) => new THREE.Path(h.map(P)));
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.002, bevelEnabled: false, curveSegments: 6 });
-  const tints = ['#FFFCF4', '#F6EFE4', '#FDF9C6', '#EFE6F5', '#F3EBDD'].map((c) => mat(c, 0.95));
-  // 자리: 벽감 아치를 따라 두 겹의 호(심볼의 봉우리처럼), 정해진 순서로 채운다
-  const spots = [];
-  const cy = L.leg, rings = [L.R - 0.2, L.R - 0.38];
-  for (let r = 0; r < rings.length; r++) {
-    const n = r ? 14 : 22;
-    for (let i = 0; i < n; i++) {
-      const a = Math.PI * (0.1 + 0.8 * (i + (r ? 0.5 : 0)) / (n - 1 + (r ? 1 : 0)));
-      spots.push([Math.cos(a) * rings[r], cy + Math.sin(a) * rings[r], r]);
-    }
-  }
-  // 채우는 순서: 꼭대기에서 양옆으로 번져 나간다
-  const order = spots.map((s, i) => [i, Math.abs(s[0]) + s[2] * 0.3]).sort((a, b) => a[1] - b[1]).map((x) => x[0]);
-  const pieces = order.map((k, i) => {
-    const [x, y] = spots[k];
-    const m = new THREE.Mesh(geo, tints[(k * 7) % tints.length]);
-    m.position.set(x + Math.sin(k * 12.9) * 0.012, y + Math.cos(k * 7.3) * 0.012, 0);
-    m.rotation.z = Math.sin(k * 3.7) * 0.5;
-    const s = 0.75 + ((k * 37) % 10) / 22;
-    m.scale.setScalar(s);
-    m.castShadow = true; m.visible = false;
-    m.userData.s = s;
-    g.add(m);
-    return m;
+  const load = (src) => { const t = new THREE.TextureLoader().load(src); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
+  const atlas = load('assets/trace-glyphs.png'), edge = load('assets/trace-glyphs-edge.png');
+  const COLS = 4, ROWS = 3;
+  const geoFor = (cell) => {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const u0 = (cell % COLS) / COLS, v1 = 1 - Math.floor(cell / COLS) / ROWS;
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) / COLS, v1 - (1 - uv.getY(i)) / ROWS);
+    return geo;
+  };
+  const COLORS = ['#4F5F4C', '#C1B1D1', '#FDF9C6', '#4F5F4C'];   // 모스 · 라벤더 · 옐로(브랜드 색)
+  const mats = COLORS.map((c) => new THREE.MeshStandardMaterial({ color: c, map: atlas, alphaTest: 0.5, roughness: 0.9 }));
+  const paper = new THREE.MeshStandardMaterial({ color: '#FFFCF4', map: edge, alphaTest: 0.5, roughness: 0.95 });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: '#3E3550', map: edge, transparent: true, opacity: 0.14, depthWrite: false });
+  const pieces = STICKERS.map(([x, y, cell, size, deg, col]) => {
+    const geo = geoFor(cell);
+    const p = new THREE.Group();
+    const sh = new THREE.Mesh(geo, shadowMat); sh.position.set(0.05, -0.06, -0.02);
+    const back = new THREE.Mesh(geo, paper); back.position.z = 0.01;
+    const face = new THREE.Mesh(geo, mats[col]); face.position.z = 0.02;
+    p.add(sh, back, face);
+    p.position.set(x, y, 0);
+    p.rotation.z = deg * Math.PI / 180;
+    p.scale.set(size, size, 0.12);
+    p.visible = false;
+    p.userData.s = size;
+    g.add(p);
+    return p;
   });
   let base = 0, mine = 0;
   const show = () => pieces.forEach((p, i) => { p.visible = i < base + mine; });
   return {
     group: g,
     setLevel(lv) { base = TRACE_COUNT[Math.max(0, Math.min(12, lv | 0))]; show(); },
-    // 방금 남긴 한 장의 흔적: 다음 자리에 한 조각(단계가 오르지 않아도 이 방문 동안만)
+    // 방금 남긴 한 장의 흔적: 다음 자리에 스티커 하나(이 방문 동안만)
     addMine() {
       const p = pieces[base + mine];
       if (!p) return null;
