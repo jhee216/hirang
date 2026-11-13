@@ -86,6 +86,8 @@ export function buildArchitecture(group, ROOM) {
   door.rotation.y = -Math.PI / 2; door.position.set(RX - 0.004, SH * N, z1 + 0.95);
   const doorFrame = new THREE.Mesh(new THREE.ExtrudeGeometry(archShape(1.22, 2.42), { depth: 0.03, bevelEnabled: false, curveSegments: 40 }), mat(COLORS.lavender, 0.85));
   doorFrame.rotation.y = -Math.PI / 2; doorFrame.position.set(RX - 0.001, SH * N, z1 + 0.95);
+  // 2026-11-13: 이 노란 빛 아치 문 너머가 방명록 라운지(/guestbook/) — 누르면 옆방으로 건너간다
+  door.userData.toGuestbook = true; doorFrame.userData.toGuestbook = true;
   const doorLight = new THREE.PointLight('#FFE9A8', 2.2, 3.2, 1.6);
   doorLight.position.set(RX - 0.5, SH * N + 1.2, z1 + 0.95);
   stair.add(plat, platTrim, doorFrame, door, doorLight);

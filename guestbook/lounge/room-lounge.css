@@ -1,0 +1,36 @@
+/* 비밀독서구역 안 방명록 라운지의 화면 조작(입력 카드·읽기 단추·일어나기). gbr- 로 시작해 원래 방의 스타일과 섞이지 않는다 */
+.gbr{--moss:#4F5F4C;--ivory:#FFF9EA;--ink:#2E3A2C;--muted:#716C60;--paper:#FFFCF4;--line:rgba(79,95,76,.18);--ease:cubic-bezier(.22,1,.36,1);font-family:"Pretendard","Inter","Apple SD Gothic Neo",sans-serif;color:var(--ink)}
+.gbr [hidden]{display:none!important}
+.gbr-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.gbr-spots{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:40;display:flex;gap:8px}
+.gbr-spots button,.gbr-stand,.gbr-ghost,.gbr-turn{white-space:nowrap;font:600 14px/1 Pretendard,Inter,sans-serif;color:var(--moss);background:rgba(255,252,244,.94);border:1px solid rgba(79,95,76,.22);border-radius:999px;padding:13px 20px;cursor:pointer;backdrop-filter:blur(6px)}
+.gbr-spots button:hover,.gbr-stand:hover,.gbr-ghost:hover,.gbr-turn:hover{background:#fff}
+.gbr button:focus-visible,.gbr-primary:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
+.gbr-stand{position:fixed;left:32px;bottom:96px;z-index:41}
+.gbr-writer{position:fixed;z-index:42;right:32px;top:50%;transform:translateY(-50%);width:min(380px,calc(100vw - 64px));border-radius:6px;padding:26px 26px 22px;display:flex;flex-direction:column;gap:12px;background:var(--paper);border:1px solid var(--line);box-shadow:0 18px 50px -24px rgba(46,58,44,.35)}
+.gbr-prompt{font:600 17px/1.45 Pretendard,sans-serif}
+.gbr-writer textarea{width:100%;resize:none;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:repeating-linear-gradient(transparent 0 31px,var(--line) 31px 32px);font:400 16px/32px Pretendard,sans-serif;color:var(--ink);padding:0 2px;outline:none;min-height:192px}
+.gbr-count{align-self:flex-end;font:500 12px/1 Inter,sans-serif;color:var(--muted);margin-top:-6px}
+.gbr-grp{display:flex;gap:14px;flex-wrap:wrap}
+.gbr-rd,.gbr-ck{display:inline-flex;align-items:center;gap:7px;font:500 14px/1.3 Pretendard,sans-serif;cursor:pointer}
+.gbr-rd input,.gbr-ck input{accent-color:var(--moss);width:16px;height:16px;margin:0}
+.gbr-writer input[type="text"]{border:0;border-bottom:1px solid var(--line);background:transparent;font:400 15px/1.6 Pretendard,sans-serif;padding:4px 2px;outline:none;color:var(--ink)}
+.gbr-trap{position:absolute!important;left:-9999px;width:1px;height:1px;opacity:0}
+.gbr-err{min-height:1.2em;margin:0;font:500 13px/1.4 Pretendard,sans-serif;color:#9A4A3A}
+.gbr-primary{font:600 15px/1 Pretendard,sans-serif;color:var(--ivory);background:var(--moss);border:0;border-radius:999px;padding:15px 18px;cursor:pointer}
+.gbr-primary:disabled{opacity:.55;cursor:default}
+.gbr-reader{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:41;display:flex;align-items:center;gap:10px}
+.gbr-turn{width:46px;height:46px;padding:0;font-size:18px}
+.gbr-turn:disabled{opacity:.35;cursor:default}
+.gbr-rpos{font:600 13px/1 Inter,sans-serif;color:var(--moss);min-width:64px;text-align:center;background:rgba(255,252,244,.94);padding:12px 10px;border-radius:999px}
+.gbr-toast{position:fixed;left:50%;top:84px;transform:translate(-50%,-6px);z-index:43;margin:0;font:600 14px/1.4 Pretendard,sans-serif;color:var(--ivory);background:var(--moss);padding:12px 18px;border-radius:999px;opacity:0;transition:opacity .3s,transform .3s var(--ease);pointer-events:none;max-width:calc(100vw - 40px);text-align:center}
+.gbr-toast.on{opacity:1;transform:translate(-50%,0)}
+/* 라운지에 앉거나 쓰고 읽는 동안에는 원래 방의 관람 지점 막대를 숨긴다 */
+body:has(.gbr:not([data-mode="walk"])) #stations{opacity:0;pointer-events:none}
+@media (max-width:900px){
+  .gbr-spots,.gbr-reader{bottom:max(84px,calc(env(safe-area-inset-bottom) + 76px))}
+  .gbr-stand{left:18px;top:62px;bottom:auto;padding:11px 16px}
+  .gbr-writer{left:0;right:0;bottom:0;top:auto;transform:none;width:auto;border-radius:16px 16px 0 0;padding:18px 18px max(16px,env(safe-area-inset-bottom));gap:10px;max-height:62svh;overflow:auto}
+  .gbr-writer textarea{min-height:128px}
+  .gbr-toast{top:60px}
+}

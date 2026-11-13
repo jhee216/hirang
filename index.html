@@ -1,5 +1,7 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="favicon-symbol.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>비밀독서구역 하이랑</title>
 <script id="hirang-entry-route">
 /* 첫 방문은 비밀의 문. 웹사이트로 나온 경우와 책·주문 딥링크는 현재 경로를 유지한다. */
@@ -666,6 +668,8 @@ h1,p{margin:0}
 .ct-form .full{grid-column:1/-1}
 .ct-form input,.ct-form textarea{width:100%;border:1px solid rgba(12,12,12,.2);border-radius:var(--rad);background:var(--ivory);padding:10px 13px;font:500 14px var(--sans);color:var(--ink);outline:none;transition:border-color .2s}
 .ct-form input{height:42px}
+.ct-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:-6px 0 4px;font-size:12px;color:var(--muted)}.ct-legend span{display:inline-flex;align-items:center;gap:6px}.ct-legend i{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px rgba(12,12,12,.12)}
+.ct-form .ct-nostore{font-size:11px;font-weight:500;color:var(--muted);opacity:.85;margin-top:-1px}
 .ct-form textarea{min-height:86px;resize:vertical;line-height:1.6}
 .ct-form input:focus,.ct-form textarea:focus{border-color:var(--moss)}
 .ct-form .ct-ln{justify-self:end;font-weight:500;font-size:12px}
@@ -5297,7 +5301,7 @@ function fpFmt(t){
       h+='<a class="ct-naver" href="'+naverUrl(q,S.brand)+'" target="_blank" rel="noopener"><i>N</i>네이버 지도에서 실제 매장 전체 보기 ↗</a>';
       if(S.live&&S.live.stores.length){
         var ls=S.live.stores.filter(function(c){return S.brand==='all'||c.brand===S.brand});
-        h+='<div class="ct-map" id="ctMap" role="img" aria-label="편의점 위치 지도"></div><p class="ct-attr">지도 © OpenStreetMap 기여자</p>';
+        h+='<div class="ct-map" id="ctMap" role="img" aria-label="편의점 위치 지도"></div><p class="ct-legend"><span><i style="background:#C1B1D1"></i>'+(S.live&&S.live.label==='내 위치'?'내 위치':'검색한 동네의 중심')+'</span><span><i style="background:#4F5F4C"></i>편의점</span><span><i style="background:#0C0C0C"></i>선택한 매장</span></p><p class="ct-attr">지도 © OpenStreetMap 기여자</p>';   /* 2026-11-13: 보라 점이 '내 위치'로 오해되어 점 색의 뜻을 지도 아래에 적는다 */
         h+='<div class="ct-subh"><b>실제 매장 '+ls.length+'곳</b><button type="button" class="ct-txtbtn" data-liveclear>제휴 편의점 목록으로 돌아가기</button></div>';
         h+=ls.length?'<div class="ct-opts">'+ls.slice(0,S.lAll?99:6).map(function(c){return cvsCard(c,'l'+S.live.stores.indexOf(c),n,ids)}).join('')+'</div>'+(ls.length>6&&!S.lAll?'<button type="button" class="ct-txtbtn ct-more" data-liveall>가까운 매장 '+(ls.length-6)+'곳 더 보기</button>':''):'<p class="ct-none2">고른 브랜드의 매장이 주변에 없습니다.</p>';
       }else{
@@ -5373,7 +5377,7 @@ function fpFmt(t){
       }else{
         h+='<div class="ct-blk"><b>받는 분</b><p>배송비는 무료입니다. 책 이름은 패키지를 열기 전까지 비밀이고, 보내는 분은 하이랑 도서창고로 자동 입력됩니다.</p><div class="ct-form">'+
           '<label>받는 분 성함<input data-f="sName" type="text" placeholder="홍길동" value="'+esc(S.sName)+'"></label>'+
-          '<label>받는 분 연락처<input data-f="sPhone" type="tel" placeholder="010-0000-0000" value="'+esc(S.sPhone)+'"></label>'+
+          '<label>받는 분 연락처<input data-f="sPhone" type="tel" placeholder="010-0000-0000" value="'+esc(S.sPhone)+'"><small class="ct-nostore">입력한 연락처는 저장되지 않습니다.</small></label>'+
           '<label class="full">받는 주소<input data-f="sAddr" type="text" placeholder="도로명 주소와 상세 주소" value="'+esc(S.sAddr)+'"></label>'+
           '<label class="full">배송 요청사항 (선택)<input data-f="sNote" type="text" placeholder="예: 부재 시 문자 부탁드립니다" value="'+esc(S.sNote||'')+'"></label></div></div>';
       }
@@ -5383,10 +5387,10 @@ function fpFmt(t){
       if(!count('gift'))return '';
       return '<section class="ct-grp">'+gh('gift')+mini('gift')+'<div class="ct-blk"><b>보내는 분</b><p>선물을 보내는 주문자 정보입니다. 받는 분에게 보내는 분 이름이 함께 안내됩니다.</p><div class="ct-form">'+
         '<label>보내는 분 성함<input data-f="gFrom" type="text" placeholder="홍길동" value="'+esc(S.gFrom)+'"></label>'+
-        '<label>보내는 분 연락처<input data-f="gFromPhone" type="tel" placeholder="010-0000-0000" value="'+esc(S.gFromPhone)+'"></label></div></div>'+
+        '<label>보내는 분 연락처<input data-f="gFromPhone" type="tel" placeholder="010-0000-0000" value="'+esc(S.gFromPhone)+'"><small class="ct-nostore">입력한 연락처는 저장되지 않습니다.</small></label></div></div>'+
         '<div class="ct-blk" style="border-bottom:0"><b>선물 받는 분</b><p>받는 분 연락처로 예약을 진행합니다. 받는 분도 패키지를 열기 전까지 무슨 책인지 모릅니다. 수령 비용은 없습니다.</p><div class="ct-form">'+
         '<label>받는 분 성함<input data-f="gName" type="text" placeholder="홍길동" value="'+esc(S.gName)+'"></label>'+
-        '<label>받는 분 연락처<input data-f="gPhone" type="tel" placeholder="010-0000-0000" value="'+esc(S.gPhone)+'"></label>'+
+        '<label>받는 분 연락처<input data-f="gPhone" type="tel" placeholder="010-0000-0000" value="'+esc(S.gPhone)+'"><small class="ct-nostore">입력한 연락처는 저장되지 않습니다.</small></label>'+
         '<div class="full ct-ntf" role="radiogroup" aria-label="받는 분 알림"><span>받는 분 알림</span>'+
         '<label><input type="radio" name="ctNotify" data-f="gNotify" value="yes"'+(S.gNotify!=='no'?' checked':'')+'><b>선물 알림 보내기</b><small>주문이 끝나면 받는 분에게 선물이 간다는 문자를 보냅니다</small></label>'+
         '<label><input type="radio" name="ctNotify" data-f="gNotify" value="no"'+(S.gNotify==='no'?' checked':'')+'><b>알림 없이 보내기</b><small>미리 알리지 않고, 수령 안내만 받는 분 연락처로 보냅니다</small></label></div>'+
@@ -6234,13 +6238,41 @@ function fpFmt(t){
     if ((m = w.match(/^(.*)봐요$/))) return m[1] + '봅니다';
     if ((m = w.match(/^(.*)내요$/))) return m[1] + '냅니다';
     if ((m = w.match(/^(.*)나요$/))) return m[1] + '납니다';
-    if ((m = w.match(/^(.*)주세요$/))) return m[1] + '주시기 바랍니다';
-    if ((m = w.match(/^(.*)세요$/))) return m[1] + '시면 됩니다';
+    // 2026-11-13: 요청은 '~해 주세요'로 둔다(서비스 안내 문체). '~하시면 됩니다'는 말투가 가벼워 보였다
+    if (/세요$/.test(w)) return w;
     if ((m = w.match(/^(.*[가-힣])[어아]요$/)) && jong(m[1].slice(-1))) return m[1] + '습니다';
+    // 받침 없는 말 + 어요(바뀌어요 → 바뀝니다): 마지막 글자에 ㅂ 받침을 더한다
+    if ((m = w.match(/^(.*)([가-힣])어요$/)) && !jong(m[2])) return m[1] + String.fromCharCode(m[2].charCodeAt(0) + 17) + '니다';
     return w;
   }
+  // 2026-11-13: 대기업 고객 안내 문체로 — 구어체·감정 표현을 정돈된 안내 문장으로 바꾼다(표시 직전, 모든 답에 공통)
+  var TONE = [
+    [/하이랑에 대해 궁금한 점을 편하게 물어보(시면 됩니다|세요)\.?/g, '하이랑에 대해 궁금하신 내용을 입력해 주세요.'],
+    [/도움이 되었다니 다행입니다\.?/g, '이용해 주셔서 감사합니다.'],
+    [/더 궁금한 (점|게) (있으면|있으시면) (언제든|편하게) 물어보(시면 됩니다|세요)\.?/g, '추가로 궁금하신 내용이 있으면 언제든 문의해 주세요.'],
+    [/궁금한 대로 편하게 이어서 물어보셔도 됩니다\.?/g, '이어서 궁금하신 내용을 입력해 주세요.'],
+    [/더 궁금한 게 있으면 편하게 물어보(시면 됩니다|세요)\.?/g, '추가로 궁금하신 내용을 입력해 주세요.'],
+    [/편하게 물어보(시면 됩니다|세요)/g, '입력해 주세요'],
+    [/하이랑은 먼저 책을 권하기보다 직접 고르실 수 있게 곁을 지키는 쪽입니다\.?/g, '하이랑은 책을 먼저 추천하지 않고, 고객이 직접 고를 수 있도록 돕습니다.'],
+    [/고른 책은 그대로 소장하시면 됩니다/g, '구매하신 책은 그대로 소장하실 수 있습니다'],
+    [/고르시면 됩니다/g, '고르실 수 있습니다'],
+    [/막상 읽어보니 손이 가지 않았습니다/g, '막상 읽어 보면 끝까지 읽지 않게 되는 경우가 많았습니다'],
+    [/막상 펼쳐보면 손이 가지 않았습니다/g, '막상 펼쳐 보면 끝까지 읽지 않게 되는 경우가 많았습니다'],
+    [/곱씹어 ?보니 그 선택은 내 것이 아니라 누군가의 평가와 추천이었습니다/g, '돌아보면 그 선택은 스스로의 판단이 아니라 다른 사람의 평가와 추천에 기댄 것이었습니다'],
+    [/곱씹어 ?보니 그 선택은 제 것이 아니었습니다/g, '돌아보면 그 선택은 스스로의 판단이 아니었습니다'],
+    [/무엇을 고를지 막막한 건 그대로였습니다/g, '무엇을 고를지 정하기 어려운 문제는 여전했습니다'],
+    [/답해드릴 수 있습니다/g, '안내해 드릴 수 있습니다'], [/답해드립니다/g, '안내해 드립니다'], [/답변드립니다/g, '답변해 드립니다'],
+    [/([가-힣])해드(립|릴|려)/g, '$1해 드$2'], [/좁혀드/g, '좁혀 드'], [/골라드/g, '골라 드'], [/알려주시/g, '알려 주시'], [/남겨주신/g, '남겨 주신'], [/문의해주시/g, '문의해 주시'],
+    [/ 같은 것을 /g, ' 등을 '], [/ 같은 것은 /g, ' 등은 '], [/ 같은 것도 /g, ' 등도 '],
+    [/아래 추천 질문을 눌러보셔도 좋고, /g, '아래 추천 질문을 선택하시거나, '],
+    [/물어보셔도 좋습니다/g, '문의하실 수 있습니다'], [/처음이라면 /g, '처음 이용하신다면 '], [/읽어 보셔도 되고/g, '읽어 보실 수 있고'],
+    [/제가 가진 (?:하이랑 |가이드북 )?정보/g, '현재 안내된 정보'], [/말씀드린 내용이 현재 안내된 정보의 전부입니다/g, '안내해 드린 내용이 현재 안내된 정보의 전부입니다'],
+    [/([가-힣])주세요/g, '$1 주세요'], [/ 주 세요/g, ' 주세요'], [/금지돼 있습니다/g, '금지되어 있습니다'], [/됐습니다/g, '되었습니다'],
+  ];
   function da(s) {
-    return String(s).replace(/([가-힣]+)요(?=[\s.!?,)'’"…]|$)/g, function (w) { return daWord(w); }).replace(/([가-힣]*었)죠(?=[.!?\s]|$)/g, '$1습니다');
+    var out = String(s).replace(/([가-힣]+)요(?=[\s.!?,)(:'’"…]|$)/g, function (w) { return daWord(w); }).replace(/([가-힣]*었)죠(?=[.!?\s]|$)/g, '$1습니다');
+    for (var i = 0; i < TONE.length; i++) out = out.replace(TONE[i][0], TONE[i][1]);
+    return out;
   }
   window.__hcwDa = da;
 

@@ -2,10 +2,12 @@
 // 원래 비밀독서구역(experience/js/main.js)과 같은 톤 매핑·노출·환경광. 백엔드는 기존 guestbook/lib 그대로.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildLounge, buildPage, buildTraces, LAYOUT, ROOM } from './world.js';
+import { buildLounge, buildPage, buildTraces, buildPageGlow, LAYOUT, ROOM } from './world.js';
 import { makePageTexture } from './pages.js';
 import { getBackend } from '../lib/backend.js';
 import { visitorKey } from '../lib/visitor-key.js';
+import { buildVisitors } from './visitors.js';
+import { startPresence } from '../../experience/js/live/presence.js';
 
 const $ = (id) => document.getElementById(id);
 const app = $('app');
@@ -72,6 +74,9 @@ scene.add(world.group);
 const { book, tray, writeChair, readChair } = world;
 const traces = buildTraces();
 scene.add(traces.group);
+// 지금 함께 접속한 다른 방문자(최대 5명) — 3D 독서구역과 같은 익명 신호·같은 캐릭터
+const visitors = buildVisitors(scene);
+const presence = startPresence((f) => visitors.setFigures(f));
 const BU = book.userData;
 
 // 쓰는 종이: 트레이 맨 위 한 장. 글이 실시간으로 적힌다(앞면 좌우를 뒤집어 앉은 사람 쪽에서 바로 읽히게)
@@ -83,6 +88,8 @@ const T = LAYOUT.table;
 const PAGE_TRAY = () => { const p = tray.localToWorld(new THREE.Vector3(0, 0.0195, 0.008)); return { pos: p, ry: tray.rotation.y }; };
 const PAGE_DESK = { pos: new THREE.Vector3(T.x - 0.45, T.h + 0.0007, T.z + 0.02), ry: -Math.PI / 2 + 0.05 };   // 쓰는 의자 앞(위쪽이 +x)
 function placePage(p) { page.position.copy(p.pos); page.rotation.set(0, p.ry, 0); }
+const pageGlow = buildPageGlow();   // 트레이 위 빈 페이지가 은은하게 빛난다
+scene.add(pageGlow.group);
 placePage(PAGE_TRAY());
 
 // 방명록 자리: 받침 위(평소) / 책상 위 읽는 자리(펼쳐 읽을 때)
@@ -402,7 +409,7 @@ function drawSpread() {
     $('readText').textContent = '아직 펼쳐 볼 수 있는 페이지가 없습니다.';
   } else {
     const p = pages[idx];
-    rightTex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${idx + 1} / ${pages.length}`, size: 50 });
+    rightTex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${idx + 1} / ${pages.length}`, size: 66 });
     $('rpos').textContent = `${idx + 1} / ${pages.length}`;
     $('readText').textContent = `${p.name || '익명'}: ${p.body}`;
   }
@@ -415,8 +422,9 @@ function readOrbit() {
   const spine = new THREE.Vector3(-BU.W / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), BOOK_DESK.ry);
   // 세로 화면: 펼친 두 면이 화면보다 넓으므로 글이 있는 오른쪽 면을 화면 가득(두 손가락으로 벌리거나 모아 조절)
   const P = isPortrait();
-  return { kind: 'read', center: (P ? BOOK_DESK.pos.clone() : BOOK_DESK.pos.clone().add(spine)).add(new THREE.Vector3(0, 0.02, 0)), r: P ? 0.82 : 0.95, theta: P ? 0.08 : 0.2, phi: Math.PI / 2 + 0.22, fov: P ? 58 : 44,
-    min: 0.35, max: 1.5, thMin: 0.05, thMax: 0.95, phiMin: Math.PI / 2 + 0.22 - 0.7, phiMax: Math.PI / 2 + 0.22 + 0.7 };
+  // 앉은 채 상체를 조금 숙여 내려다보는 높이·각도(서서 내려다보는 느낌이 들지 않게)
+  return { kind: 'read', center: (P ? BOOK_DESK.pos.clone() : BOOK_DESK.pos.clone().add(spine)).add(new THREE.Vector3(0, 0.02, 0)), r: P ? 0.6 : 0.62, theta: P ? 0.3 : 0.55, phi: Math.PI / 2 + 0.22, fov: P ? 58 : 44,
+    min: 0.28, max: 1.1, thMin: 0.05, thMax: 1.0, phiMin: Math.PI / 2 + 0.22 - 0.7, phiMax: Math.PI / 2 + 0.22 + 0.7 };
 }
 async function openBook() {
   if (busy) return;
@@ -455,7 +463,7 @@ async function turn(dir) {
   busy = true;
   const lh = BU.leafHinge;
   const cur = pages[idx], nxt = pages[j];
-  const drawP = (tex, p, i) => tex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${i + 1} / ${pages.length}`, size: 50 });
+  const drawP = (tex, p, i) => tex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${i + 1} / ${pages.length}`, size: 66 });
   lh.visible = true;
   if (dir > 0) { drawP(leafTex, cur, idx); idx = j; drawSpread(); await tween(0.95, (k) => { lh.rotation.z = Math.PI * 0.985 * k; }); }
   else { drawP(leafTex, nxt, j); lh.rotation.z = Math.PI * 0.985; await tween(0.95, (k) => { lh.rotation.z = Math.PI * 0.985 * (1 - k); }); idx = j; drawSpread(); }
@@ -672,6 +680,8 @@ renderer.setAnimationLoop((now) => {
       if (Math.abs(camera.fov - rig.fov) > 1e-3) { camera.fov = rig.fov; camera.updateProjectionMatrix(); }
     }
   }
+  visitors.update(now / 1000, dt, reduced);
+  pageGlow.update(now / 1000, page, page.visible && !pageAtDesk && (mode === 'walk' || mode === 'seat'));
   renderer.render(scene, camera);
 });
 
@@ -691,4 +701,4 @@ getBackend().then(async (b) => {
 if (new URLSearchParams(location.search).get('from') === 'room') $('toRoom').href = '../experience/index.html?return=room';
 
 // 브라우저 확인용
-window.__lounge = { traces, THREE, scene, camera, world, rig, act, sit, stand, openBook, openWriting, setLevel, get mode() { return mode; }, get seat() { return seat; }, get pages() { return pages; }, set pages(v) { pages = v; }, page, book, tweens };
+window.__lounge = { traces, visitors, presence, THREE, scene, camera, world, rig, act, sit, stand, openBook, openWriting, setLevel, get mode() { return mode; }, get seat() { return seat; }, get pages() { return pages; }, set pages(v) { pages = v; }, page, book, tweens };

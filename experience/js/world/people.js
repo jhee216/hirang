@@ -7,7 +7,8 @@ import { sharedMat } from '../mat-cache.js';
 const mat = (c, r = 0.85) => sharedMat(c, r, { emissive: c, emissiveIntensity: 0.12 });
 
 // 하이랑 관람객 캐릭터(약 1m): 콩·달걀·동그라미 머리, 모자·머리 모양·눈·옷·소품을 조합해 저마다 다르게
-function figure({ skin = '#F1DCC8', head = 'round', hair = 'bun', hairColor = '#4A3A2E', hat = '#C1B1D1',
+// 2026-11-13: 방명록 라운지(guestbook/lounge/visitors.js)도 같은 캐릭터를 쓴다
+export function figure({ skin = '#F1DCC8', head = 'round', hair = 'bun', hairColor = '#4A3A2E', hat = '#C1B1D1',
   eyes = 'dot', outfit = 'coat', top = '#4F5F4C', bottom = '#F4EEE2', extra = null, height = 1.0 }) {
   const s = height;
   const root = new THREE.Group();
@@ -119,7 +120,7 @@ function figure({ skin = '#F1DCC8', head = 'round', hair = 'bun', hairColor = '#
 }
 
 // 관람객 캐릭터 일곱 가지(동시에 3~6명이 머문다)
-const LOOKS = [
+export const LOOKS = [
   { head: 'bean', hair: 'beret', hat: '#C1B1D1', hairColor: '#3E3029', eyes: 'arc', outfit: 'dress', top: '#F4EEE2', extra: 'book', height: 0.98 },
   { head: 'egg', hair: 'bun', hairColor: '#5C4434', eyes: 'glasses', outfit: 'coat', top: '#4F5F4C', bottom: '#E9DFC9', extra: 'tote', skin: '#E3C4A6', height: 1.02 },
   { head: 'round', hair: 'bucket', hat: '#EFE5A2', eyes: 'dot', outfit: 'overalls', bottom: '#4F5F4C', skin: '#F3E0CC', height: 0.94 },

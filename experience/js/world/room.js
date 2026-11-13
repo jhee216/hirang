@@ -51,7 +51,8 @@ function symbolShapes(sym, SW) {
   return { outer, holes };
 }
 
-export function buildRoom({ sym, packages }) {
+// sideDoor: 오른쪽 벽의 방명록 라운지 입구 { z, R, leg } (2026-11-13: 방명록을 같은 건물의 옆방으로 붙였다)
+export function buildRoom({ sym, packages, sideDoor = null }) {
   contactTex ||= contactShadowTexture();
   const group = new THREE.Group();
   group.name = 'room';
@@ -71,8 +72,22 @@ export function buildRoom({ sym, packages }) {
   ceil.position.set(0, RH + 0.1, cz); ceil.castShadow = true; ceil.receiveShadow = true;
   const back = new THREE.Mesh(new THREE.BoxGeometry(RX * 2 + 0.4, RH, 0.2), wallMat);
   back.position.set(0, RH / 2, z1 - 0.1); back.receiveShadow = true; back.castShadow = true;
-  const right = new THREE.Mesh(new THREE.BoxGeometry(0.2, RH, D + 0.2), wallMat);
-  right.position.set(RX + 0.1, RH / 2, cz); right.receiveShadow = true; right.castShadow = true;
+  let right;
+  if (sideDoor) {
+    // 오른쪽 벽에 바닥까지 뚫린 넓고 낮은 아치 입구(외곽선 홈 — 구멍이 바깥선에 닿으면 삼각분할이 깨진다).
+    // 모양의 x = 장면의 z, 두께 0.2 m는 −y 회전으로 바깥(+x) 쪽
+    const { z: dz, R: dR, leg: dl } = sideDoor, za = z1 - 0.1, zb = z0 + 0.1;
+    const ws = new THREE.Shape();
+    ws.moveTo(za, 0); ws.lineTo(dz - dR, 0); ws.lineTo(dz - dR, dl);
+    ws.absarc(dz, dl, dR, Math.PI, 0, true);
+    ws.lineTo(dz + dR, 0); ws.lineTo(zb, 0); ws.lineTo(zb, RH); ws.lineTo(za, RH); ws.lineTo(za, 0);
+    right = new THREE.Mesh(new THREE.ExtrudeGeometry(ws, { depth: 0.2, bevelEnabled: false, curveSegments: 48 }), wallMat);
+    right.rotation.y = -Math.PI / 2; right.position.set(RX + 0.2, 0, 0);
+  } else {
+    right = new THREE.Mesh(new THREE.BoxGeometry(0.2, RH, D + 0.2), wallMat);
+    right.position.set(RX + 0.1, RH / 2, cz);
+  }
+  right.receiveShadow = true; right.castShadow = true;
   group.add(floor, ceil, back, right);
   // 브랜드 모스 그린 징두리 벽(아래 1m) + 아이보리 몰딩 띠 + 걸레받이: 벽에 깊이와 색을 준다
   const wainMat = mat(COLORS.moss, 0.7, { bumpMap: plasterBump(6, 1), bumpScale: 0.2 });
@@ -87,7 +102,11 @@ export function buildRoom({ sym, packages }) {
     group.add(g);
   };
   wainscot(RX * 2, 0, z1, 0);                 // 뒷벽
-  wainscot(D, RX, cz, -Math.PI / 2);          // 오른쪽 벽
+  if (sideDoor) {   // 오른쪽 벽 징두리: 입구 자리를 비운다
+    const a = sideDoor.z - sideDoor.R - 0.02, b = sideDoor.z + sideDoor.R + 0.02;
+    wainscot(a - z1, RX, (z1 + a) / 2, -Math.PI / 2);
+    wainscot(z0 - b, RX, (b + z0) / 2, -Math.PI / 2);
+  } else wainscot(D, RX, cz, -Math.PI / 2);          // 오른쪽 벽
   // 입구 벽 안쪽 면: 문 구멍 양옆과 위를 실내 회벽·징두리로 마감(뒤돌아봐도 회색 벽면이 아니라 방의 벽)
   const dw = DOOR.width / 2 + 0.06;
   for (const s of [-1, 1]) {
@@ -151,7 +170,7 @@ export function buildRoom({ sym, packages }) {
   frame.position.z = -FD / 2; frame.castShadow = true; frame.receiveShadow = true;
   shelf.add(frame);
   const shelfShadow = contact(3.8, 1.3, 0.9);
-  shelfShadow.position.z = 0.1;
+  shelfShadow.position.z = 0.1; shelfShadow.position.y = 0.006;   // 2026-11-13: 받침 윗면과 겹쳐 깜빡이지 않게 조금 띄운다
   shelf.add(shelfShadow);
   // 2.0 최종: 라벤더 뒷판 → 심볼 외곽 전체를 덮는 3cm 두께 뒷장(캐비닛 등판). 앞 틀과 1.5cm 떨어져 그림자 틈이 생긴다
   const backBoard = new THREE.Mesh(new THREE.ExtrudeGeometry(outer, { depth: 0.03, bevelEnabled: false, curveSegments: 14 }), mat(COLORS.lavender, 0.9, { emissive: '#E6DAF2', emissiveIntensity: 0.06 }));
@@ -397,7 +416,8 @@ export function buildRoom({ sym, packages }) {
      셸프와 옆벽 사이에 한 겹을 더해, 걸을 때 셸프·기둥·벽이 서로 다른 속도로 움직인다(시차) ---- */
   const pierMat = mat(COLORS.ivory, 0.92, { emissive: COLORS.ivory, emissiveIntensity: 0.08 });
   const pierInset = mat('#D9CCE4', 0.9, { emissive: '#E9DDF5', emissiveIntensity: 0.08 });
-  for (const sx of [-1, 1]) {
+  // 2026-11-13: 오른쪽 벽에 방명록 라운지 입구(빛나는 아치)가 생기면 그 앞을 막던 오른쪽 아치 기둥은 두지 않는다(입구가 그 자리의 아치가 된다)
+  for (const sx of sideDoor ? [-1] : [-1, 1]) {
     const pier = new THREE.Group();
     pier.position.set(sx * 3.62, 0, -4.7);   // 2.0 최종(3차): 옆벽 쪽으로 붙여 통로 확보
     pier.rotation.y = -sx * 0.3;

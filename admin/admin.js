@@ -338,6 +338,7 @@ document.querySelectorAll('.filters button').forEach((b) => b.addEventListener('
   document.querySelectorAll('.filters button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   renderEntries();
 }));
+$('fileHint').hidden = true;   // 스크립트가 돌고 있다 = 주소로 연 화면
 if (SUPA) { $('emailRow').hidden = false; $('email').required = true; }
 setView(SUPA && api.token() ? 'wait' : 'login');
 load();

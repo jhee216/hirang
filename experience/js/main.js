@@ -2,7 +2,8 @@
 // 문 · 문틀 · 내부 공간 · 카메라가 하나의 3D 좌표계에 있고, 상태 머신이 입력을 조율한다.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { COLORS, CAMERA, DOOR, TIMING, PACKAGES, STATIONS } from './config.js';
+import { COLORS, CAMERA, DOOR, TIMING, PACKAGES, STATIONS, GUESTBOOK_DOOR } from './config.js';
+import { mountLounge } from '../../guestbook/lounge/room-lounge.js';
 import { S, createState } from './state.js';
 import { CameraRig } from './camera-rig.js';
 import { loadLogos, setAnisotropy, logoImage } from './textures.js';
@@ -188,7 +189,11 @@ fitPlaque();
 scene.add(door.group);
 const sym = await fetch('assets/symbol-shape.json').then((r) => r.json());
 const packages = await loadPackages(PACKAGES, { sym, wordImg: logoImage('word') });
-const room = buildRoom({ sym, packages });
+const room = buildRoom({ sym, packages, sideDoor: GUESTBOOK_DOOR });
+// 2026-11-13: 방명록 라운지 — 오른쪽 벽 아치 입구 너머의 옆방(같은 장면). 앉기·쓰기·읽기 동안만 라운지가 카메라를 맡는다
+const lounge = await mountLounge({ scene, camera, rig, door: GUESTBOOK_DOOR, sym, root: ui.app, coarse });
+window.__lounge = lounge;   // 브라우저 확인용
+{ const i = STATIONS.findIndex((s) => s[0] === '방명록'); if (i >= 0) { const st = lounge.station; STATIONS[i][1] = [st.pos.x, st.pos.z]; STATIONS[i][2] = [st.look.x, st.look.y, st.look.z]; STATIONS[i][3] = st.lens; } }
 // 공간을 둘러보는 관람객들
 const people = buildPeople(room.group);
 room.obstacles.push(...people.obstacles);
@@ -218,6 +223,12 @@ for (const p of room.packageSpots) {
 scene.add(room.group);
 
 /* ---------- 2.0 성능: 움직이지 않는 같은 재질 메쉬 합치기(그리기 호출 절감, 보이는 모습은 같다) ---------- */
+// 2026-11-13: 바닥·받침 위에 얹은 얇은 그림자·빛 판(투명, 깊이 쓰지 않음)이 휴대폰의 낮은 깊이 정밀도에서
+// 바로 아래 면과 겹쳐 깜빡였다(책장 아래 검은 그림자·문 앞 흰 빛) → 깊이를 살짝 앞당겨 항상 위에 그린다
+scene.traverse((o) => {
+  if (!o.isMesh) return;
+  for (const mt of [].concat(o.material)) if (mt && mt.transparent && mt.depthWrite === false) { mt.polygonOffset = true; mt.polygonOffsetFactor = -2; mt.polygonOffsetUnits = -4; }
+});
 const mergeInfo = mergeStatic(room.group, {
   skipRoots: [...room.openables.map((o) => o.group), ...room.group.children.filter((c) => c.userData.noPick), traces.group],
   skipMeshes: [room.floor, ...room.tiles],
@@ -327,7 +338,7 @@ function pick(list, x, y) {
 function pickWorld(x, y) {
   ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  for (const h of ray.intersectObject(room.group, true)) {
+  for (const h of ray.intersectObjects([room.group, lounge.group], true)) {
     const o = h.object;
     if (!o.isMesh || !o.visible) continue;
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -342,7 +353,7 @@ function setCursor(c) { ui.canvas.style.cursor = c; }
 // 걷기 경계: 방 안 + 전시물(셸프·테이블·받침·계단) 바닥 영역을 피한다
 const R = 0.26;   // 2.0 최종(3차): 0.38 → 0.26 (사람 어깨 반폭). 0.38에서는 셸프·패키지·아치 기둥 사이 통로가 모두 막혀 방 뒤쪽에 갈 수 없었다
 const DOOR_EXIT = { hw: DOOR.width / 2 + 0.1, z: -0.4 };   // 문 폭의 반, 문턱 위치(m)
-rig.limit = (p) => {
+const roomLimit = (p) => {
   p.x = THREE.MathUtils.clamp(p.x, -3.75, 3.75);
   // 문 앞(문 폭 안)은 문턱까지 걸어갈 수 있다 — 거기까지 가면 나가기(exitAtDoor)
   // 2.0 최종(3차): 문턱 자동 나가기 제거. 걸어서는 도착 지점(z −0.5)까지만 — 나가기는 '출구' 지점·홈 버튼으로만 묻는다
@@ -355,7 +366,9 @@ rig.limit = (p) => {
     }
   }
   return p;
-};
+};// 라운지 쪽(입구 띠·옆방)이면 라운지의 걷기 범위를, 아니면 원래 방의 범위를 쓴다
+rig.limit = (p) => (lounge.inLounge(p) ? lounge.limitW(p) : roomLimit(p));
+
 
 // 바닥을 가리키면 걸어갈 자리를 보여 주는 고리
 const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 48), new THREE.MeshBasicMaterial({ color: COLORS.moss, transparent: true, opacity: 0, depthWrite: false }));
@@ -370,6 +383,7 @@ function showRing(p) {
 const touches = new Map();
 let pinch = null;
 ui.canvas.addEventListener('pointerdown', (e) => {
+  if (lounge.owns) { lounge.pointerDown(e); try { ui.canvas.setPointerCapture(e.pointerId); } catch (err) { /* 끝난 포인터 */ } return; }
   // rev4: 가운데 버튼(휠 누르기) = 지금 이동을 즉시 멈춤(자동 스크롤 막음)
   if (e.pointerType === 'mouse' && e.button === 1) { e.preventDefault(); if (rig.explore) stopMove('middle'); return; }
   if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -387,6 +401,7 @@ ui.canvas.addEventListener('pointerdown', (e) => {
 });
 
 ui.canvas.addEventListener('pointermove', (e) => {
+  if (lounge.owns) { lounge.pointerMove(e); return; }
   if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && touches.size === 2) {
     const [a, b] = [...touches.values()];
@@ -417,6 +432,13 @@ ui.canvas.addEventListener('pointermove', (e) => {
 });
 
 function endPointer(e) {
+  if (lounge.owns) {
+    if (lounge.pointerUp(e) && e.type !== 'pointercancel') {   // 끌기가 아닌 누름: 라운지 물건이면 그 동작, 바닥이면 일어나기
+      const h = pickWorld(e.clientX, e.clientY), k = lounge.pickKey(h?.object);
+      if (k) lounge.act(k); else if (h && (lounge.isFloor(h.object) || h.object === room.floor) && lounge.mode === 'seat') lounge.stand();
+    }
+    return;
+  }
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   if (!ptr.down || e.pointerId !== ptr.id) return;
@@ -431,6 +453,7 @@ ui.canvas.addEventListener('pointercancel', endPointer);
 // 휠 = 보는 방향으로 걷기
 let wheelAcc = 0;
 ui.canvas.addEventListener('wheel', (e) => {
+  if (lounge.owns) { e.preventDefault(); wheelAcc += e.deltaY; if (Math.abs(wheelAcc) >= 60 || Math.abs(e.deltaY) >= 40) { lounge.wheel(Math.sign(wheelAcc)); wheelAcc = 0; } return; }
   if (!state.allows('look')) return;
   e.preventDefault();
   // rev5: 휠 한 칸 = 한 걸음(CAMERA.walk.step). 트랙패드처럼 잘게 오는 입력은 한 칸(약 60px)만큼 모이면 한 걸음.
@@ -457,7 +480,8 @@ function updateHover(x, y) {
     if (o !== hovered) { unhoverObject(); if (o) hoverObject(o); }
     if (tile !== hoveredTile) { unhoverTile(); if (tile) hoverTile(tile); }
     if (o || tile) { placeHover(x, y); showRing(null); return; }
-    const onFloor = h && h.object === room.floor;
+    if (h?.object.userData.toGuestbook || lounge.pickKey(h?.object)) { showRing(null); setCursor('pointer'); return; }
+    const onFloor = h && (h.object === room.floor || lounge.isFloor(h.object));
     if (onFloor) {
       const from = rig.target || rig.pos;
       const d = new THREE.Vector3(h.point.x - from.x, 0, h.point.z - from.z);
@@ -491,7 +515,7 @@ function handleTap(x, y) {
   if (ptr.stopOnTap) {
     ptr.stopOnTap = false;
     const hh = pickWorld(x, y);
-    if (!(hh && (hh.object === room.floor || hh.object.userData.openable || hh.object.userData.tileOf))) { stopMove('click'); return; }
+    if (!(hh && (hh.object === room.floor || hlounge.isFloor(h.object) || hh.object.userData.openable || hh.object.userData.tileOf))) { stopMove('click'); return; }
   }
   if (state.allows('doorClick')) {
     if (pick(doorHits, x, y)) openDoor();
@@ -514,9 +538,14 @@ function handleTap(x, y) {
     if (o) { select(o); return; }
     const tileOf = h?.object.userData.tileOf;
     if (tileOf) { unhoverTile(); select(tileOf); return; }
+    // 2026-11-13: 오른쪽 계단 위 노란 아치 문 = 방명록 라운지(옆방)로
+    const lk = lounge.pickKey(h?.object);
+    if (lk) { rig.stop?.(); lounge.act(lk); return; }
+    // 오른쪽 계단 위 노란 아치 문: 옆방(방명록 라운지)으로 걸어간다
+    if (h?.object.userData.toGuestbook) { const i = STATIONS.findIndex((x) => x[0] === '방명록'); if (i >= 0) goStation(i); return; }
     // 바닥을 누르면 그 자리까지 걸어간다
     // 바닥을 누르면 그쪽으로 한두 걸음만 걸어간다(멀리 눌러도 벽까지 가지 않는다)
-    if (h && h.object === room.floor) {
+    if (h && (h.object === room.floor || lounge.isFloor(h.object))) {
       const from = rig.target || rig.pos;
       const d = new THREE.Vector3(h.point.x - from.x, 0, h.point.z - from.z);
       const len = d.length();
@@ -551,13 +580,29 @@ getBackend().then(async (b) => {
 
 /* ---------- 관람 지점(전시장 동선) ---------- */
 let stationIdx = 0;
+// 여러 지점을 차례로 걷는 길(방 ↔ 라운지): 앞 지점에 닿으면 다음으로
+let route = null;
+function stepRoute(start) {
+  if (!route || lounge.owns) return;
+  if (!start && (rig.target || rig.isMoving?.())) return;
+  const [p, lookAt, lens] = route.shift();
+  rig.walkTo(p.clone(), lookAt || new THREE.Vector3(route[0] ? route[0][0].x : p.x, 1.2, route[0] ? route[0][0].z : p.z), lens);
+  if (!route.length) route = null;
+}
 function goStation(i) {
   if (!state.allows('look') || asking) return;
   stationIdx = (i + STATIONS.length) % STATIONS.length;
   const [, xz, look] = STATIONS[stationIdx];
   if (!xz) { askExit(); return; }               // '출구': 나갈지 먼저 묻는다
   const [x, z] = xz;
-  rig.walkTo(new THREE.Vector3(x, 0, z), new THREE.Vector3(...look), STATIONS[stationIdx][3]);
+  const dest = new THREE.Vector3(x, 0, z), here = rig.pos;
+  // 방과 라운지 사이는 벽을 지나지 않게 입구를 거쳐 걷는다
+  const toL = lounge.insideRoom(dest), fromL = lounge.insideRoom(here);
+  if (toL !== fromL) {
+    const st = lounge.station;
+    route = [[fromL ? st.doorIn : st.doorOut, null], [fromL ? st.doorOut : st.doorIn, null], [dest, new THREE.Vector3(...look), STATIONS[stationIdx][3]]];
+    stepRoute(true);
+  } else { route = null; rig.walkTo(dest, new THREE.Vector3(...look), STATIONS[stationIdx][3]); }
   [...ui.stationList.children].forEach((b, k) => b.classList.toggle('on', k === stationIdx));
   announce(`${STATIONS[stationIdx][0]}(으)로 걸어갑니다`);
 }
@@ -717,7 +762,10 @@ function openDoor() {
     .call(() => state.set(S.CAMERA_ENTERING), null, 'dolly')
     .to(pos, { x: CAMERA.arrive[0], y: CAMERA.arrive[1], z: isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2], duration: CAMERA.entry.duration * entryScale(), ease: 'sine.inOut' }, 'dolly')
     .to(look, { x: CAMERA.arriveLook[0], y: isPortrait() ? CAMERA.portrait.lookY : CAMERA.arriveLook[1], z: CAMERA.arriveLook[2], duration: CAMERA.entry.duration * entryScale() * 0.92, ease: 'sine.inOut' }, 'dolly')
-    .to(rig, { fov: CAMERA.arriveFov || CAMERA.fovIn, duration: CAMERA.entry.duration * entryScale(), ease: 'sine.inOut' }, 'dolly')
+    // 2026-11-13: 세로 화면은 도착 렌즈(관람 지점 pfov)까지 한 번에, 렌즈 배율도 걷는 동안 고르게 바뀐다
+    // (전에는 문턱 0.7 m 구간에서 배율이 바뀌고 도착 순간 렌즈가 다시 튀어 줌 인·아웃이 두 번 반복되었다)
+    .call(() => { rig.entryZ = [pos.z, isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2]]; }, null, 'dolly')
+    .to(rig, { fov: (rig.fovScaleIn !== 1 && STATIONS[CAMERA.arriveStation ?? 0]?.[3]?.pfov) || CAMERA.arriveFov || CAMERA.fovIn, duration: CAMERA.entry.duration * entryScale(), ease: 'sine.inOut' }, 'dolly')
     .to(doorFx, { light: 0, duration: 1.8, ease: 'sine.in' }, `dolly+=${CAMERA.entry.duration * entryScale() * 0.55}`);
   announce('문이 열립니다');
 }
@@ -1218,6 +1266,7 @@ ui.skip.addEventListener('click', skipIntro);
 ui.doorHint.addEventListener('click', skipIntro);
 
 addEventListener('keydown', (e) => {
+  if (lounge.keydown(e)) return;
   if (state.is(S.BOOK_READING)) {
     if (e.key === 'ArrowRight') { e.preventDefault(); turn(1); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); turn(-1); }
@@ -1422,15 +1471,18 @@ const loop = () => {
   people.setVisible(!state.is(S.INITIAL, S.DOOR_HOVER, S.DOOR_OPENING, S.CAMERA_ENTERING, S.LEAVING));
   // 2026-11-11 라이브: 바로 입장(문 연출 없음)은 arrivedAt이 없어 실제 방문자 캐릭터가 계속 멈춰 있었다 → 그 경우는 방 안이면 바로 움직인다
   if ((lastInput > arrivedAt + 50 || arrivedAt === Infinity) && state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER, S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING, S.RETURN_TO_ROOM)) people.setActive(true);
-  rig.update(dt, !state.allows('look') || asking);
+  if (!lounge.owns) rig.update(dt, !state.allows('look') || asking);
+  lounge.update(dt, t, performance.now());
+  stepRoute();
   // 문: 열림 각도 + 호버 시 살짝 벌어짐 + 손잡이
   // 문 앞에서 7초 넘게 머뭇거리면 방 안의 빛이 문틈을 뚫고 새어 나온다(움직이면 잦아든다)
   const atDoor = state.is(S.INITIAL, S.DOOR_HOVER);
-  const lureT = atDoor && !reduced && performance.now() - lastInput > LURE_DELAY ? 1 : 0;
+  // 2026-11-13: 휴대폰은 화면을 만질 때마다 머뭇거림 빛이 켜졌다 꺼져 깜빡이는 것처럼 보였다 → 터치 기기에서는 쓰지 않는다
+  const lureT = atDoor && !reduced && !coarse && performance.now() - lastInput > LURE_DELAY ? 1 : 0;
   // 2026-11-11: 문을 누르면 머뭇거림 빛은 0.15초 안에 사라진다(문 뒤 밝은 판·바닥 금빛이 열리는 틈으로 노랗게 튀던 것)
   lure += (lureT - lure) * (1 - Math.exp(-(lureT ? 1.2 : atDoor ? 4 : 18) * dt));
   // 깜빡임 대신 숨 쉬듯 천천히 밝아졌다 잦아드는 빛(사이렌처럼 번쩍이지 않게)
-  const flick = 0.5 + 0.35 * Math.sin(t * 1.1) + 0.15 * Math.sin(t * 2.7 + 1.3);
+  const flick = coarse ? 0.5 : 0.5 + 0.35 * Math.sin(t * 1.1) + 0.15 * Math.sin(t * 2.7 + 1.3);
   const lureAjar = lure * (0.07 + 0.03 * Math.sin(t * 0.8));   // 2026-11-11: 틈을 조금 더 벌려 안쪽 빛이 분명히 새어 나오게
   // 유혹하는 동안 바깥은 살짝 어두워져 문틈의 빛이 도드라진다
   // 낮의 입구만 주변광을 눌러 초록 문·몰딩·벽등의 명암을 확보한다.
@@ -1482,7 +1534,7 @@ if (returning) enterRoomDirect();
 // 문 앞(바깥): 문 위 조명·벽등·문틈 빛 / 방 안: 천장 스포트·램프·패키지 조명·안뜰 문 조명
 const lightsIn = (root) => { const a = []; root.traverse((o) => { if (o.isLight) a.push(o); }); return a; };
 const outsideLights = [doorLight, ...lightsIn(door.group)];
-const insideLights = [...new Set([...lamps, hoverLight, ...lightsIn(room.group)])];
+const insideLights = [...new Set([...lamps, hoverLight, ...lightsIn(room.group), ...lounge.lights])];
 let zoneKey = '';
 function setZone(out, inn) {
   const key = `${+out}${+inn}`;

@@ -101,6 +101,7 @@ function wainscot(group, L, gaps, place) {
   if (a < L) runs.push([a, L]);
   for (const [r0, r1] of runs) {
     const w = r1 - r0, cx = (r0 + r1) / 2;
+    if (w < 0.3) continue;   // 벽감과 통로 사이 7 cm 같은 자투리는 기둥처럼 보여 두지 않는다
     const p = sh(new THREE.Mesh(new THREE.BoxGeometry(w, WH, 0.03), wain)); p.position.set(cx, WH / 2, 0.015);
     const rl = sh(new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, 0.05), rail)); rl.position.set(cx, WH + 0.02, 0.025);
     const b = sh(new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, 0.045), base)); b.position.set(cx, 0.05, 0.03);
@@ -193,7 +194,7 @@ export function buildPage(faceTex = null) {
 // 로컬: 책등이 −x, 표지 앞면이 +y(눕혀 놓은 상태)
 export function buildGuestbook() {
   const g = new THREE.Group();
-  const W = 0.36, D = 0.48, CT = 0.008;
+  const W = 0.26, D = 0.34, CT = 0.007;   // 한 장에 짧은 글 — 책은 작게, 길면 넘긴다
   const cover = mat(C.lavender, 0.82), spineM = mat(C.moss, 0.8), paper = mat('#F4ECDA', 0.95);
   const back = sh(new THREE.Mesh(new RoundedBoxGeometry(W, CT, D, 2, 0.002), cover));
   g.add(back);
@@ -230,7 +231,7 @@ export function buildGuestbook() {
   g.add(leafHinge);
   // 두께: 받은 장 수의 '단계'(0~12)로 계단식. 정확한 수는 드러나지 않는다
   const setLevel = (lv) => {
-    const t = 0.04 + Math.min(12, Math.max(0, lv)) * 0.004;
+    const t = 0.03 + Math.min(12, Math.max(0, lv)) * 0.003;
     block.scale.y = t; block.position.y = CT / 2 + t / 2;
     spine.scale.y = t + CT * 2; spine.position.y = (t + CT * 2) / 2 - CT / 2;
     hinge.position.y = CT + t;
@@ -299,7 +300,8 @@ function logoCutout(img, width) {
 }
 
 /* ---------- 방 전체 ---------- */
-export function buildLounge({ sym, logoImg }) {
+// merged: 원래 비밀독서구역과 한 장면에 붙일 때(통로 너머 옛 방 조각을 만들지 않고, 바닥도 방 안만)
+export function buildLounge({ sym, logoImg, merged = false }) {
   const group = new THREE.Group();
   const { x: RX, z0, z1, h: RH, wt } = ROOM;
   const D = z0 - z1, cz = (z0 + z1) / 2;
@@ -309,8 +311,8 @@ export function buildLounge({ sym, logoImg }) {
   const wallMat = mat(C.ivory, 0.95, { bumpMap: plasterBump(4, 2), bumpScale: 0.35, emissive: C.ivory, emissiveIntensity: 0.1 });
   const revealMat = mat('#F2E8D3', 0.95, { emissive: C.ivory, emissiveIntensity: 0.06 });
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(RX * 2 + 1, D + 6), floorMat);
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, cz - 2.6); floor.receiveShadow = true; floor.userData.floor = true;
+  const floor = merged ? new THREE.Mesh(new THREE.PlaneGeometry(RX * 2, D + wt + 0.02), floorMat) : new THREE.Mesh(new THREE.PlaneGeometry(RX * 2 + 1, D + 6), floorMat);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, merged ? cz - (wt + 0.02) / 2 : cz - 2.6); floor.receiveShadow = true; floor.userData.floor = true;
   group.add(floor);
   const ceil = sh(new THREE.Mesh(new THREE.BoxGeometry(RX * 2 + 0.6, 0.2, D + 0.4), wallMat));
   ceil.position.set(0, RH + 0.1, cz); group.add(ceil);
@@ -322,21 +324,13 @@ export function buildLounge({ sym, logoImg }) {
   const backWall = wallPiece(RX * 2, RH, wt, {
     // 바닥에 닿는 통로·벽감은 외곽선 홈으로(구멍이 바깥선에 닿으면 삼각분할이 깨진다)
     doors: [{ x: L.door.x + RX, R: L.door.R, leg: L.door.leg }, { x: L.alcove.x + RX, R: L.alcove.R, leg: L.alcove.leg }],
-    holes: [{ x: L.niche.x + RX, R: L.niche.R, leg: 0, y: L.niche.y }],
+    holes: [],
   }, wallMat, revealMat);
   backWall.position.set(-RX, 0, z1);
   group.add(backWall);
   // 라벤더 벽감: 바닥에서 올라오는 낮고 넓은 아치. 안쪽은 원래 방 아치 벽감과 같은 라벤더
   const alc = recess(L.alcove.R, L.alcove.leg, L.alcove.depth, mat(C.lavender, 0.9, { emissive: '#E9DDF5', emissiveIntensity: 0.08 }), mat(C.lavenderBack, 0.9, { emissive: '#E9DDF5', emissiveIntensity: 0.06 }));
   alc.position.set(L.alcove.x, L.alcove.y, z1 - wt); group.add(alc);
-  // 로고 반원 벽감
-  const nic = recess(L.niche.R, 0, L.niche.depth, revealMat, mat('#F6EDDA', 0.95, { emissive: C.ivory, emissiveIntensity: 0.08 }));
-  nic.position.set(L.niche.x, L.niche.y, z1 - wt); group.add(nic);
-  if (logoImg) {
-    const logo = logoCutout(logoImg, L.niche.R * 1.1);
-    logo.position.set(L.niche.x, L.niche.y + logo.userData.h / 2 + 0.035, z1 - wt - L.niche.depth + 0.03);
-    group.add(logo);
-  }
   // 징두리: 통로·벽감 자리를 비운다
   wainscot(group, RX * 2, [[L.door.x + RX - L.door.R, L.door.x + RX + L.door.R], [L.alcove.x + RX - L.alcove.R, L.alcove.x + RX + L.alcove.R]], (g) => g.position.set(-RX, 0, z1));
 
@@ -384,7 +378,7 @@ export function buildLounge({ sym, logoImg }) {
   const relief = new THREE.Mesh(new THREE.ShapeGeometry(archSolid(2.0, 1.55), 56), mat('#CDBFDD', 0.9)); relief.position.set(ox, 0, oz1 + 0.002); old.add(relief);
   if (sym) { const shelf = buildShelfGlimpse(sym); shelf.position.set(ox, 0.06, oz1 + 0.75); old.add(shelf); }
   const dais = sh(new THREE.Mesh(new THREE.CylinderGeometry(1.62, 1.66, 0.06, 96), mat('#F3EAD6', 0.86))); dais.position.set(ox, 0.03, oz1 + 0.95); old.add(dais);
-  group.add(old);
+  if (!merged) group.add(old);
 
   // ----- 가구 -----
   const table = buildTable(); table.position.set(L.table.x, 0, L.table.z); group.add(table);
@@ -404,10 +398,10 @@ export function buildLounge({ sym, logoImg }) {
 const TRACE_COUNT = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14];
 // [x(벽감 가운데 기준), y, 모양(0 = 심볼, 1~10 = 패턴), 크기(m), 기울기(도), 색]
 const STICKERS = [
-  [0.0, 1.38, 0, 0.17, -6, 0], [-0.36, 1.2, 3, 0.11, 12, 2], [0.37, 1.18, 1, 0.11, -14, 1],
+  [0.0, 1.13, 0, 0.13, -6, 0], [-0.36, 1.2, 3, 0.11, 12, 2], [0.37, 1.18, 1, 0.11, -14, 1],
   [-0.6, 0.98, 0, 0.12, 8, 3], [0.6, 1.0, 8, 0.1, -8, 0], [-0.17, 1.02, 5, 0.085, 18, 1],
-  [0.19, 0.98, 0, 0.11, -10, 2], [0.0, 1.62 - 0.6, 9, 0.08, 4, 3], [-0.26, 1.47, 7, 0.08, 22, 3],
-  [0.27, 1.45, 2, 0.085, -20, 0], [-0.58, 1.24, 10, 0.075, -12, 1], [0.61, 1.25, 4, 0.08, 14, 2],
+  [0.19, 0.98, 0, 0.11, -10, 2], [0.0, 0.86, 9, 0.08, 4, 3], [-0.3, 1.44, 7, 0.08, 22, 3],
+  [0.31, 1.43, 2, 0.085, -20, 0], [-0.58, 1.24, 10, 0.075, -12, 1], [0.61, 1.25, 4, 0.08, 14, 2],
   [-0.4, 0.86, 6, 0.08, -18, 0], [0.42, 0.84, 0, 0.1, 10, 1],
 ];
 export function buildTraces() {
@@ -415,7 +409,7 @@ export function buildTraces() {
   const L = LAYOUT.alcove, { z1, wt } = ROOM;
   g.position.set(L.x, 0, z1 - wt - L.depth + 0.004);
   const load = (src) => { const t = new THREE.TextureLoader().load(src); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
-  const atlas = load('assets/trace-glyphs.png'), edge = load('assets/trace-glyphs-edge.png');
+  const atlas = load(new URL('../assets/trace-glyphs.png', import.meta.url).href);
   const COLS = 4, ROWS = 3;
   const geoFor = (cell) => {
     const geo = new THREE.PlaneGeometry(1, 1);
@@ -426,15 +420,13 @@ export function buildTraces() {
   };
   const COLORS = ['#4F5F4C', '#C1B1D1', '#FDF9C6', '#4F5F4C'];   // 모스 · 라벤더 · 옐로(브랜드 색)
   const mats = COLORS.map((c) => new THREE.MeshStandardMaterial({ color: c, map: atlas, alphaTest: 0.5, roughness: 0.9 }));
-  const paper = new THREE.MeshStandardMaterial({ color: '#FFFCF4', map: edge, alphaTest: 0.5, roughness: 0.95 });
-  const shadowMat = new THREE.MeshBasicMaterial({ color: '#3E3550', map: edge, transparent: true, opacity: 0.14, depthWrite: false });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: '#3E3550', map: atlas, transparent: true, opacity: 0.16, depthWrite: false });
   const pieces = STICKERS.map(([x, y, cell, size, deg, col]) => {
     const geo = geoFor(cell);
     const p = new THREE.Group();
-    const sh = new THREE.Mesh(geo, shadowMat); sh.position.set(0.05, -0.06, -0.02);
-    const back = new THREE.Mesh(geo, paper); back.position.z = 0.01;
+    const sh = new THREE.Mesh(geo, shadowMat); sh.position.set(0.04, -0.05, -0.02);
     const face = new THREE.Mesh(geo, mats[col]); face.position.z = 0.02;
-    p.add(sh, back, face);
+    p.add(sh, face);
     p.position.set(x, y, 0);
     p.rotation.z = deg * Math.PI / 180;
     p.scale.set(size, size, 0.12);
@@ -443,6 +435,17 @@ export function buildTraces() {
     g.add(p);
     return p;
   });
+  // 공식 hirang 로고: 벽감 꼭대기 가운데에 붙인 스티커(항상 보인다). 원본 그림 그대로(초록 글자, 배경 없음)
+  const logoTex = load(new URL('../assets/hirang-logo.png', import.meta.url).href);
+  const logoW = 0.34, logoGeo = new THREE.PlaneGeometry(logoW, logoW * 297 / 920);
+  const logo = new THREE.Group();
+  const lsh = new THREE.Mesh(logoGeo, new THREE.MeshBasicMaterial({ color: '#3E3550', map: logoTex, transparent: true, opacity: 0.16, depthWrite: false }));
+  lsh.position.set(0.006, -0.007, 0);
+  const lface = new THREE.Mesh(logoGeo, new THREE.MeshStandardMaterial({ map: logoTex, alphaTest: 0.5, roughness: 0.9 }));
+  lface.position.z = 0.003;
+  logo.add(lsh, lface);
+  logo.position.set(0, 1.36, 0.002); logo.rotation.z = -0.03;
+  g.add(logo);
   let base = 0, mine = 0;
   const show = () => pieces.forEach((p, i) => { p.visible = i < base + mine; });
   return {
@@ -454,6 +457,57 @@ export function buildTraces() {
       if (!p) return null;
       mine++; show();
       return p;
+    },
+  };
+}
+
+/* ---------- 빛나는 빈 페이지: 트레이 위 한 장이 은은하게 빛나고 둘레에 빛 알갱이가 반짝인다(멀리서도 '여기서 쓴다'가 보이게) ---------- */
+export function buildPageGlow() {
+  const g = new THREE.Group();
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d');
+  const gr = x.createRadialGradient(64, 64, 2, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,236,170,0.95)'); gr.addColorStop(0.35, 'rgba(250,210,120,0.45)'); gr.addColorStop(1, 'rgba(245,200,110,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(cv);
+  // 후광: 종이 위에 떠 있는 둥근 빛(늘 카메라를 본다)
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  halo.scale.set(1.0, 1.0, 1); halo.position.y = 0.14;
+  g.add(halo);
+  // 종이 바로 위 납작한 빛(종이 모양을 따라 번진다)
+  const sheet = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.52), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  sheet.rotation.x = -Math.PI / 2; sheet.position.y = 0.004;
+  g.add(sheet);
+  // 빛 알갱이
+  const N = 26, pos = new Float32Array(N * 3), seed = [];
+  for (let i = 0; i < N; i++) seed.push([Math.random() * Math.PI * 2, 0.14 + Math.random() * 0.22, 0.03 + Math.random() * 0.4, 0.5 + Math.random()]);
+  const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const sparks = new THREE.Points(pg, new THREE.PointsMaterial({ size: 0.05, map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: '#FFE7A8', toneMapped: false }));
+  sparks.frustumCulled = false;
+  g.add(sparks);
+  const light = new THREE.PointLight('#FFE3A0', 1.4, 2.2, 1.6);
+  light.position.y = 0.35;
+  g.add(light);
+  g.traverse((o) => { o.userData.noPick = true; });
+  return {
+    group: g, light,
+    // page: 빛을 따라 붙일 종이(앞면 재질을 살짝 발광). on: 보일지
+    update(t, page, on) {
+      g.visible = on;
+      const face = page?.userData.face;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 1.8);
+      if (face) { face.emissive?.set('#FFE7B0'); face.emissiveIntensity = on ? 0.35 + pulse * 0.35 : 0; }
+      if (!on) return;
+      g.position.copy(page.position); g.rotation.y = page.rotation.y;
+      halo.material.opacity = 0.55 + pulse * 0.45;
+      sheet.material.opacity = 0.5 + pulse * 0.4;
+      light.intensity = 1.0 + pulse * 0.8;
+      for (let i = 0; i < N; i++) {
+        const [a0, r, h, sp] = seed[i], a = a0 + t * 0.35 * sp;
+        pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 2] = Math.sin(a) * r;
+        pos[i * 3 + 1] = h + Math.sin(t * sp + a0) * 0.04;
+      }
+      pg.attributes.position.needsUpdate = true;
+      sparks.material.opacity = 0.6 + 0.4 * Math.sin(t * 3.3);
     },
   };
 }

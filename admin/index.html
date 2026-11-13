@@ -7,6 +7,8 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#FFF9EA">
+<link rel="icon" type="image/png" href="../favicon-symbol.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <title>하이랑 관리자</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -60,6 +62,8 @@
         <p class="eyebrow">ADMIN</p>
         <h2 class="prompt">관리자 로그인</h2>
         <p class="hint" id="loginHint">이 화면의 숫자와 글은 서버에서 관리자 로그인을 확인한 뒤에만 내려옵니다.</p>
+        <!-- 파일을 직접 열면(file://) 스크립트가 막혀 이메일 칸이 나오지 않고 로그인도 되지 않는다 — 스크립트가 돌면 이 안내를 숨긴다 -->
+        <p class="err" id="fileHint">이 화면은 파일을 직접 열면 동작하지 않습니다. 주소창에 jhee216.github.io/hirang/admin/ 을 입력해 열어 주세요.</p>
         <form id="loginForm" class="lform">
           <label id="emailRow" hidden><span>이메일</span><input type="email" id="email" autocomplete="username"></label>
           <label><span>비밀번호</span><input type="password" id="password" autocomplete="current-password" required></label>

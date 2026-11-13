@@ -65,6 +65,14 @@ export function createAudio() {
     apply(v ? FADE_IN : 1.2);
   }
 
+  // 2026-11-13: 다른 앱·다른 탭으로 나가거나 페이지를 떠나면 음악을 멈추고, 돌아오면 이어서 재생한다
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx) return;
+    if (document.hidden) ctx.suspend(); else if (wanted) ctx.resume();
+  });
+  addEventListener('pagehide', () => { if (ctx) ctx.suspend(); });
+  addEventListener('pageshow', (e) => { if (e.persisted && ctx && wanted && !document.hidden) ctx.resume(); });
+
   return {
     isOn: () => on,
     getVolume: () => volume,

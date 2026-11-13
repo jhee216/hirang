@@ -134,7 +134,9 @@ export class CameraRig {
       const bobAmt = Math.min(1, this.moving / CAMERA.walk.speed) * CAMERA.walk.bob;
       this.camera.position.set(this.pos.x, this.pos.y + Math.sin(this.bob) * bobAmt, this.pos.z);
     }
-    const kIn = clamp((0.2 - this.camera.position.z) / 0.7, 0, 1);
+    // 렌즈 배율(세로 화면): 문 밖 → 방 안. 입장 중에는 걷는 전체 거리에 걸쳐 고르게(entryZ), 그 밖에는 문턱 0.7 m 구간에서
+    const z = this.camera.position.z;
+    const kIn = !this.explore && this.entryZ ? clamp((this.entryZ[0] - z) / (this.entryZ[0] - this.entryZ[1]), 0, 1) : clamp((0.2 - z) / 0.7, 0, 1);
     const f = this.fov * (this.fovScale + (this.fovScaleIn - this.fovScale) * kIn * kIn * (3 - 2 * kIn));
     if (Math.abs(this.camera.fov - f) > 1e-4) { this.camera.fov = f; this.camera.updateProjectionMatrix(); }
     this.euler.set(this.pitch, this.yaw, 0);
