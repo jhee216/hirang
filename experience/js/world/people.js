@@ -188,7 +188,9 @@ export function buildPeople(group) {
     return free.length ? free[Math.floor(Math.random() * free.length)] : -1;
   }
   function goTo(p, node, final) {
-    const path = route(p.node, node).slice(1).map((n) => V(NODES[n]));
+    // 2026-11-13: 테이블 앞 관람 자리에서 떠날 때 다음 길목으로 곧장 가면 테이블을 뚫고 지나갔다 → 먼저 그 자리의 통로 지점으로 물러난 뒤 길을 따라간다
+    const r = route(p.node, node);
+    const path = (Math.hypot(p.root.position.x - NODES[r[0]][0], p.root.position.z - NODES[r[0]][1]) > 0.05 ? r : r.slice(1)).map((n) => V(NODES[n]));
     if (final) path.push(final);
     p.path = path; p.dest = node; p.mode = 'walk'; pose(p, 'walk');
   }

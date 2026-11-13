@@ -337,8 +337,11 @@ export function buildDoor() {
     geometry.computeVertexNormals();
     return geometry;
   }
-  const plaque = new THREE.Mesh(plaqueCutout(plaqueTex, 1.28, 0.304),
-    new THREE.MeshStandardMaterial({ map: plaqueTex, emissiveMap: plaqueTex, emissive: '#FFFFFF', emissiveIntensity: 0.25, roughness: 0.8, transparent: true, depthWrite: false }));
+  const plaqueMat = (t) => new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#FFFFFF', emissiveIntensity: 0.25, roughness: 0.8, transparent: true, depthWrite: false });
+  const plaque = new THREE.Mesh(plaqueCutout(plaqueTex, 1.28, 0.304), plaqueMat(plaqueTex));
+  // 문 위 가운데에 놓일 때 쓰는 가운데 맞춤 명판(같은 크기·같은 재질)
+  const plaqueTexC = plaqueTexture(true);
+  const plaqueC = new THREE.Mesh(plaqueCutout(plaqueTexC, 1.28, 0.304), plaqueMat(plaqueTexC));
   // 명판 자리는 화면 비율에 따라 바뀐다(halfW: 문 앞 시작 위치에서 벽에 보이는 가로 반폭, m).
   // 문 오른쪽에 오른쪽 여백을 충분히 두고 들어가면 옆, 줄여도 안 들어가면 문 위 가운데.
   const PW = 1.28;
@@ -347,14 +350,15 @@ export function buildDoor() {
     const right = halfW - Math.max(0.16, halfW * 0.1);   // 오른쪽 여백(화면 폭의 약 5%)
     for (const sc of [1, 0.88, 0.78]) {
       const x = Math.min(edge + PW * sc / 2 + 0.3, right - PW * sc / 2);
-      if (x - PW * sc / 2 >= edge) { plaque.position.set(x, 1.37, z); plaque.scale.setScalar(sc); return; }   // rev4: blender 명판 높이(1.19–1.55 m)의 가운데
+      if (x - PW * sc / 2 >= edge) { plaque.position.set(x, 1.37, z); plaque.scale.setScalar(sc); plaque.visible = true; plaqueC.visible = false; return; }   // rev4: blender 명판 높이(1.19–1.55 m)의 가운데
     }
-    plaque.position.set(0, RV.hc + RV.r + 0.42, z);
-    plaque.scale.setScalar(Math.min(0.92, (halfW * 2 * 0.84) / PW));
+    plaqueC.position.set(0, RV.hc + RV.r + 0.42, z);
+    plaqueC.scale.setScalar(Math.min(0.92, (halfW * 2 * 0.84) / PW));
+    plaqueC.visible = true; plaque.visible = false;
   }
   placePlaque(3);
-  plaque.receiveShadow = false;
-  group.add(plaque);
+  plaque.receiveShadow = false; plaqueC.receiveShadow = false;
+  group.add(plaque, plaqueC);
 
   // 문틈 아래 바닥으로 새는 빛
   const spillMat = new THREE.MeshBasicMaterial({

@@ -184,7 +184,7 @@ export function buildTray() {
 export function buildPage(faceTex = null) {
   const geo = new THREE.BoxGeometry(0.21, 0.0012, 0.297);
   const edge = mat('#EFE6D2', 0.95);
-  const face = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.95, map: faceTex });
+  const face = new THREE.MeshBasicMaterial({ color: '#FFFFFF', map: faceTex, toneMapped: false });   // 2026-11-13: 빛을 받지 않는 종이(쓰는 글이 또렷하게)
   const m = sh(new THREE.Mesh(geo, [edge, edge, face, edge, edge, edge]));
   m.userData.face = face;
   return m;
@@ -215,16 +215,16 @@ export function buildGuestbook() {
   g.add(hinge);
   // 펼쳤을 때 보이는 두 면: 오른쪽 = 종이 덩어리 윗면, 왼쪽 = 앞표지 안쪽(표지가 180° 넘어가면 위를 본다)
   const pageGeo = new THREE.PlaneGeometry(W - 0.03, D - 0.03);
-  const rightMat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.95 });
-  const leftMat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.95 });
+  const rightMat = new THREE.MeshBasicMaterial({ color: '#FFFFFF', toneMapped: false });   // 2026-11-13: 빛·노출과 상관없이(빛을 받지 않는 종이), 종이는 하얗게, 노출로 글이 날아가지 않게
+  const leftMat = new THREE.MeshBasicMaterial({ color: '#FFFFFF', toneMapped: false });   // 2026-11-13: 빛·노출과 상관없이(빛을 받지 않는 종이), 종이는 하얗게, 노출로 글이 날아가지 않게
   const rightPage = new THREE.Mesh(pageGeo, rightMat); rightPage.rotation.x = -Math.PI / 2; rightPage.position.x = 0.004; rightPage.receiveShadow = true;
   const leftPage = new THREE.Mesh(pageGeo, leftMat); leftPage.rotation.x = Math.PI / 2; leftPage.position.set((W - 0.004) / 2 - 0.004, -CT / 2 - 0.0006, 0); leftPage.receiveShadow = true;
   hinge.add(leftPage);
   g.add(rightPage);
   // 넘기는 한 장(오른쪽 → 왼쪽): 책등 경첩에 붙은 얇은 종이
   const leafHinge = new THREE.Group(); leafHinge.position.x = -W / 2 + 0.012;
-  const leafFront = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.95 });
-  const leafBack = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.95 });
+  const leafFront = new THREE.MeshBasicMaterial({ color: '#FFFFFF', toneMapped: false });
+  const leafBack = new THREE.MeshBasicMaterial({ color: '#FFFFFF', toneMapped: false });
   const leafA = new THREE.Mesh(pageGeo, leafFront); leafA.rotation.x = -Math.PI / 2; leafA.position.x = (W - 0.03) / 2 + 0.006;
   const leafB = new THREE.Mesh(pageGeo, leafBack); leafB.rotation.x = Math.PI / 2; leafB.position.set((W - 0.03) / 2 + 0.006, -0.0004, 0);
   leafHinge.add(leafA, leafB); leafHinge.visible = false;
@@ -495,7 +495,7 @@ export function buildPageGlow() {
       g.visible = on;
       const face = page?.userData.face;
       const pulse = 0.5 + 0.5 * Math.sin(t * 1.8);
-      if (face) { face.emissive?.set('#FFE7B0'); face.emissiveIntensity = on ? 0.35 + pulse * 0.35 : 0; }
+      // 종이 색은 그대로 하얗게 두고, 빛남은 둘레의 은은한 빛으로만
       if (!on) return;
       g.position.copy(page.position); g.rotation.y = page.rotation.y;
       halo.material.opacity = 0.55 + pulse * 0.45;
@@ -508,6 +508,55 @@ export function buildPageGlow() {
       }
       pg.attributes.position.needsUpdate = true;
       sparks.material.opacity = 0.6 + 0.4 * Math.sin(t * 3.3);
+    },
+  };
+}
+
+/* ---------- 공중에 떠 있는 페이지와 책(인테리어) ---------- */
+// 2026-11-13: 비밀독서구역의 떠 있는 페이지·책처럼, 라운지에도 몇 장 천천히 떠다닌다. 방명록 책과는 별개.
+// 페이지에는 공개된 방명록 글이 실리고(setPages), 글이 모자라면 줄만 그어진 빈 종이로 둔다. 책은 글자 없는 표지.
+export function buildFloaters(makeTex) {
+  const group = new THREE.Group();
+  const floaters = [];
+  const PW = 0.17, PH = PW * 297 / 210;   // 2026-11-13: 비밀독서구역의 떠 있는 페이지와 같은 크기로 보이게(라운지가 작아 가까이 보이는 만큼 줄임)
+  const pageGeo = new THREE.BoxGeometry(PW, PH, 0.003);
+  const back = new THREE.MeshBasicMaterial({ color: '#F6F1E6', toneMapped: false });
+  const edge = new THREE.MeshBasicMaterial({ color: '#EDE6D6', toneMapped: false });
+  // [x, y, z, 기울기x, 방향y] — 비밀독서구역과 같은 비율의 높이(천장의 3/4 안팎, 2.35~2.7 m) — 첫 구도의 위 가장자리에 걸린다, 통로·벽감 앞은 피한다
+  const PAGE_POS = [[-1.95, 2.45, -1.7, 0.12, 0.6], [1.55, 2.55, -1.5, -0.1, -0.5], [-1.3, 2.4, -4.75, 0.08, 0.25], [1.95, 2.35, -4.1, -0.12, -0.8], [0.25, 2.5, -4.3, 0.15, 0.3]];
+  const texes = [];
+  PAGE_POS.forEach(([x, y, z, rx, ry], i) => {
+    const tex = makeTex(); texes.push(tex);
+    const face = new THREE.MeshBasicMaterial({ color: '#FFFFFF', map: tex, toneMapped: false });
+    const m = new THREE.Mesh(pageGeo, [edge, edge, edge, edge, face, back]);
+    // 글이 있는 면이 방 가운데(책상 쪽)를 향하게, 조금씩 비튼다
+    m.position.set(x, y, z); m.rotation.set(rx, Math.atan2(-0.4 - x, -2.9 - z) + ry * 0.4, (i % 3 - 1) * 0.12);
+    floaters.push({ m, base: m.position.clone(), rot: m.rotation.clone(), ph: i * 1.7, amp: 0.05 + (i % 3) * 0.015 });
+    group.add(m);
+  });
+  const bookGeo = new THREE.BoxGeometry(0.115, 0.16, 0.019);
+  const pagesSide = mat('#F3ECDD', 0.9);
+  const BOOK_POS = [[-2.1, 2.65, -3.4, 0.4, 0.9, C.moss], [0.45, 2.7, -0.95, -0.3, -0.4, C.lavender], [0.95, 2.5, -4.85, 0.5, 0.2, '#E8DE9A'], [-1.75, 2.6, -4.3, -0.35, 0.6, C.lavender]];
+  BOOK_POS.forEach(([x, y, z, rx, ry, col], i) => {
+    const cov = mat(col, 0.82), spine = mat(col === C.moss ? C.mossDark : col, 0.8);
+    const m = new THREE.Mesh(bookGeo, [spine, pagesSide, pagesSide, pagesSide, cov, cov]);
+    m.position.set(x, y, z); m.rotation.set(rx, ry, 0.2);
+    floaters.push({ m, base: m.position.clone(), rot: m.rotation.clone(), ph: 3 + i * 2.1, amp: 0.06 });
+    group.add(m);
+  });
+  group.traverse((o) => { o.userData.noPick = true; });
+  return {
+    group,
+    // 공개된 글을 최근 순으로 한 장씩(본문·이름만, 지어낸 글 없음)
+    setPages(list = []) {
+      texes.forEach((tex, i) => { const p = list[i]; tex.draw(p ? { eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', size: 46 } : {}); });
+    },
+    update(t) {
+      for (const f of floaters) {
+        f.m.position.y = f.base.y + Math.sin(t * 0.45 + f.ph) * f.amp;
+        f.m.rotation.x = f.rot.x + Math.sin(t * 0.3 + f.ph) * 0.06;
+        f.m.rotation.y = f.rot.y + Math.sin(t * 0.22 + f.ph * 0.7) * 0.1;
+      }
     },
   };
 }

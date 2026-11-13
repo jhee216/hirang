@@ -51,7 +51,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;   // 브랜드 색이 바래지 않는 톤 매핑
-renderer.toneMappingExposure = 0.94;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;   // 후처리가 장면을 여러 번 그리므로 그림자는 프레임마다 한 번만 갱신
@@ -198,7 +198,18 @@ window.__lounge = lounge;   // 브라우저 확인용
 const people = buildPeople(room.group);
 room.obstacles.push(...people.obstacles);
 // 2026-11-11 라이브: 방문자 캐릭터는 서버가 알려 준 '지금 접속한 다른 방문자'만(최대 5명, 아무도 없으면 없음)
-const presence = startPresence((figures) => people.setFigures(figures));
+// 2026-11-13: 방이 비어 보이지 않게 — 실제 접속자가 적어도 처음 한 명, 7초 안에 세 명이 둘러본다(실제 접속자가 오면 그 자리를 대신한다, 최대 5명)
+let realFigures = [], ambientN = 1;
+const AMBIENT = ['ambient-a', 'ambient-b', 'ambient-c'];
+function syncFigures() {
+  const want = Math.max(ambientN, 0);
+  const fill = AMBIENT.slice(0, Math.max(0, want - realFigures.length));
+  people.setFigures([...realFigures, ...fill].slice(0, 5));
+}
+setTimeout(() => { ambientN = 2; syncFigures(); }, 3000);
+setTimeout(() => { ambientN = 3; syncFigures(); }, 6000);
+const presence = startPresence((figures) => { realFigures = figures || []; syncFigures(); });
+syncFigures();
 // 익명 흔적(벽의 작은 종이 조각, 누를 수 없음). 백엔드가 없으면 공간에서 뺀다(가짜 흔적을 만들지 않는다)
 const traces = buildTraces({ sym });
 room.group.add(traces.group);
@@ -515,7 +526,7 @@ function handleTap(x, y) {
   if (ptr.stopOnTap) {
     ptr.stopOnTap = false;
     const hh = pickWorld(x, y);
-    if (!(hh && (hh.object === room.floor || hlounge.isFloor(h.object) || hh.object.userData.openable || hh.object.userData.tileOf))) { stopMove('click'); return; }
+    if (!(hh && (hh.object === room.floor || lounge.isFloor(hh.object) || hh.object.userData.openable || hh.object.userData.tileOf))) { stopMove('click'); return; }
   }
   if (state.allows('doorClick')) {
     if (pick(doorHits, x, y)) openDoor();
@@ -1304,7 +1315,8 @@ addEventListener('resize', () => {
 });
 
 /* ---------- 후처리 · 초점 ---------- */
-const post = createPost(renderer, scene, camera, { high: !coarse, overlay, lite });
+// 2026-11-13: 화면 후처리(빛 번짐·심도 흐림·색 보정·그레인·비네트)를 모두 쓰지 않는다 — 장면을 그대로 그린다(가벼운 경로)
+const post = createPost(renderer, scene, camera, { high: !coarse, overlay, lite: true });
 ui.app.classList.toggle('lite', lite);
 const focusRay = new THREE.Raycaster();
 const _fp = new THREE.Vector3();
@@ -1470,7 +1482,7 @@ const loop = () => {
   // 2.0 최종: 문을 지나 들어오는 동안에는 관람객을 숨긴다(화면 가장자리에 머리가 불쑥 보이던 문제). 도착 시점엔 화면 밖에 있다
   people.setVisible(!state.is(S.INITIAL, S.DOOR_HOVER, S.DOOR_OPENING, S.CAMERA_ENTERING, S.LEAVING));
   // 2026-11-11 라이브: 바로 입장(문 연출 없음)은 arrivedAt이 없어 실제 방문자 캐릭터가 계속 멈춰 있었다 → 그 경우는 방 안이면 바로 움직인다
-  if ((lastInput > arrivedAt + 50 || arrivedAt === Infinity) && state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER, S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING, S.RETURN_TO_ROOM)) people.setActive(true);
+  if (state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER, S.OBJECT_SELECTED, S.BOOK_OPENING, S.BOOK_READING, S.BOOK_CLOSING, S.RETURN_TO_ROOM)) people.setActive(true);
   if (!lounge.owns) rig.update(dt, !state.allows('look') || asking);
   lounge.update(dt, t, performance.now());
   stepRoute();
@@ -1497,7 +1509,7 @@ const loop = () => {
   hemi.intensity = sky.hemi * (1 - (0.3 + 0.22 * sky.day) * lure) * (1 - 0.15 * entranceDay);   // 2026-11-11: 머뭇거림 빛 동안 주변을 조금 더 눌러 빛이 분명히 보이게(0.18 → 0.3)
   sun.intensity = sky.sun * (1 - (0.35 + 0.25 * sky.day) * lure) * (1 - 0.28 * entranceDay);
   scene.environmentIntensity = sky.environment * (1 - 0.18 * entranceDay) * (1 - (0.3 + 0.22 * sky.day) * lure);
-  renderer.toneMappingExposure = sky.exposure - (0.05 + 0.07 * sky.day) * lure;   // rev6-6: 낮 머뭇거림 때 주변을 밤처럼 한 단계 더 눌러 문 빛이 대비로 보이게   // rev6-5: 벽 자체 발광을 줄인 만큼 낮 입구 노출을 내리지 않는다(−0.06 → 0)   // 낮 입구 보정 0.12 → 0.06(실내와의 차이를 줄임), entK로 부드럽게
+  renderer.toneMappingExposure = 1.0;   // 2026-11-13: 노출 보정을 쓰지 않는다(시간·머뭇거림에 따라 화면 밝기를 바꾸지 않음)   // rev6-6: 낮 머뭇거림 때 주변을 밤처럼 한 단계 더 눌러 문 빛이 대비로 보이게   // rev6-5: 벽 자체 발광을 줄인 만큼 낮 입구 노출을 내리지 않는다(−0.06 → 0)   // 낮 입구 보정 0.12 → 0.06(실내와의 차이를 줄임), entK로 부드럽게
   post.setGlow(lure * 0.3);   // 2.0 최종: 문틈 빛 번짐 절제
   door.setAngle(doorFx.open + doorFx.ajar + lureAjar);
   // 초록 문짝은 밖에서 볼 때만: 방 안(벽 안쪽)에 들어서면 열린 문짝이 화면을 덮지 않게 숨긴다

@@ -35,8 +35,12 @@
 
   <!-- 장면 안 물건을 고르는 버튼(키보드·화면읽기용이자, 처음 화면의 안내) -->
   <div class="spots" id="spots" role="group" aria-label="방명록 라운지">
-    <button type="button" data-go="write">쓰는 자리</button>
-    <button type="button" data-go="read">읽는 자리</button>
+    <button type="button" data-go="sit">자리에 앉기</button>
+  </div>
+  <!-- 앉은 뒤: 어느 의자에서든 쓰거나 읽는다 -->
+  <div class="spots seat-acts" id="seatActs" role="group" aria-label="자리에서 할 일" hidden>
+    <button type="button" data-go="write">한 페이지 쓰기</button>
+    <button type="button" data-go="read">공개된 페이지 읽기</button>
   </div>
   <div class="hint" id="hint" aria-hidden="true"></div>
   <p id="exploreHint" class="explore-hint" aria-hidden="true"><b>DRAG TO EXPLORE</b><span>바닥을 누르거나 휠로 걸어가고, 드래그로 둘러보세요</span></p>

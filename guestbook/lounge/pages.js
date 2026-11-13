@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 
 const FONT = '"Pretendard","Apple SD Gothic Neo","Inter",sans-serif';
-const INK = '#2E3A2C', MUTED = '#8A8372', RULE = 'rgba(79,95,76,0.13)';
+const INK = '#18211A', MUTED = '#5E584B', RULE = 'rgba(79,95,76,0.12)';   // 2026-11-13: 글자 대비를 높였다
 
 // 한국어 줄바꿈: 어절(띄어쓰기) 단위로 넘기고, 한 어절이 줄보다 길면 글자 단위로
 function wrap(ctx, text, maxW) {
@@ -29,16 +29,23 @@ export function makePageTexture(aspect = 297 / 210) {
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   const ctx = cv.getContext('2d');
   // draw({eyebrow, body, name, foot, placeholder, ruled})
-  tex.draw = ({ eyebrow = '', body = '', name = '', foot = '', placeholder = '', ruled = true, size = 46 } = {}) => {
+  tex.draw = ({ eyebrow = '', body = '', name = '', foot = '', placeholder = '', ruled = true, size = 46, minSize = size } = {}) => {
     ctx.fillStyle = '#FFFCF4'; ctx.fillRect(0, 0, W, H);
-    const pad = 96, lh = Math.round(size * 1.72), top = 230;
+    const pad = 96, top = 230;
+    // 2026-11-13: 글이 길어지면 한 장에 다 들어올 때까지 글자를 조금씩 줄인다(size → minSize)
+    while (size > minSize) {
+      ctx.font = `500 ${size}px ${FONT}`;
+      if (wrap(ctx, body || placeholder, W - pad * 2).length <= Math.floor((H - top - 170) / Math.round(size * 1.72))) break;
+      size -= 2;
+    }
+    const lh = Math.round(size * 1.72);
     if (ruled) {
       ctx.strokeStyle = RULE; ctx.lineWidth = 2;
       for (let y = top + lh - 14; y < H - 150; y += lh) { ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke(); }
     }
     ctx.textBaseline = 'alphabetic';
     if (eyebrow) { ctx.fillStyle = MUTED; ctx.font = `600 30px ${FONT}`; ctx.letterSpacing = '4px'; ctx.fillText(eyebrow, pad, 150); ctx.letterSpacing = '0px'; }
-    ctx.font = `400 ${size}px ${FONT}`;
+    ctx.font = `500 ${size}px ${FONT}`;
     const text = body || placeholder;
     ctx.fillStyle = body ? INK : 'rgba(46,58,44,0.38)';
     const lines = wrap(ctx, text, W - pad * 2);

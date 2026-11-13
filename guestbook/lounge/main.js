@@ -2,7 +2,7 @@
 // 원래 비밀독서구역(experience/js/main.js)과 같은 톤 매핑·노출·환경광. 백엔드는 기존 guestbook/lib 그대로.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildLounge, buildPage, buildTraces, buildPageGlow, LAYOUT, ROOM } from './world.js';
+import { buildLounge, buildPage, buildTraces, buildPageGlow, buildFloaters, LAYOUT, ROOM } from './world.js';
 import { makePageTexture } from './pages.js';
 import { getBackend } from '../lib/backend.js';
 import { visitorKey } from '../lib/visitor-key.js';
@@ -14,6 +14,8 @@ const app = $('app');
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isPortrait = () => innerWidth / innerHeight < 0.8;
 const narrow = () => innerWidth <= 900;
+// 2026-11-13: 종이·책이 화면 가운데에 꼭 맞게 들어오는 거리(가로 w·세로 d m, 화면에서 쓸 수 있는 세로·가로 몫)
+const fitR = (w, d, fov, hFrac = 1, wFrac = 1) => { const t = Math.tan(THREE.MathUtils.degToRad(fov) / 2), a = innerWidth / innerHeight; return Math.max(d / (2 * t * hFrac), w / (2 * t * a * wFrac)); };
 
 /* ---------- 렌더러 · 씬 ---------- */
 const canvas = $('scene');
@@ -74,6 +76,8 @@ scene.add(world.group);
 const { book, tray, writeChair, readChair } = world;
 const traces = buildTraces();
 scene.add(traces.group);
+const floaters = buildFloaters(makePageTexture);   // 2026-11-13: 공중에 떠 있는 페이지·책(공개된 방명록 글)
+scene.add(floaters.group);
 // 지금 함께 접속한 다른 방문자(최대 5명) — 3D 독서구역과 같은 익명 신호·같은 캐릭터
 const visitors = buildVisitors(scene);
 const presence = startPresence((f) => visitors.setFigures(f));
@@ -86,7 +90,14 @@ const page = buildPage(writeTex);
 scene.add(page);
 const T = LAYOUT.table;
 const PAGE_TRAY = () => { const p = tray.localToWorld(new THREE.Vector3(0, 0.0195, 0.008)); return { pos: p, ry: tray.rotation.y }; };
-const PAGE_DESK = { pos: new THREE.Vector3(T.x - 0.45, T.h + 0.0007, T.z + 0.02), ry: -Math.PI / 2 + 0.05 };   // 쓰는 의자 앞(위쪽이 +x)
+// 앉은 의자 앞 책상 자리(2026-11-13: 쓰는 자리·읽는 자리를 나누지 않는다 — 어느 의자에서든 쓰고 읽는다)
+const fwdOf = (c) => new THREE.Vector2(Math.sin(c.ry), Math.cos(c.ry));
+function deskAt(which, dist, dy, dry = 0) {
+  const c = which === 'write' ? LAYOUT.writeChair : LAYOUT.readChair, f = fwdOf(c);
+  return { pos: new THREE.Vector3(c.x + f.x * dist, T.h + dy, c.z + f.y * dist), ry: Math.atan2(-f.x, -f.y) + dry, f };
+}
+const PAGE_AT = (w) => deskAt(w, 0.62, 0.0007, 0.05);
+const BOOK_AT = (w) => deskAt(w, 0.84, 0.0035);
 function placePage(p) { page.position.copy(p.pos); page.rotation.set(0, p.ry, 0); }
 const pageGlow = buildPageGlow();   // 트레이 위 빈 페이지가 은은하게 빛난다
 scene.add(pageGlow.group);
@@ -94,7 +105,7 @@ placePage(PAGE_TRAY());
 
 // 방명록 자리: 받침 위(평소) / 책상 위 읽는 자리(펼쳐 읽을 때)
 const BOOK_LEDGE = { pos: book.position.clone(), ry: book.rotation.y };
-const BOOK_DESK = { pos: new THREE.Vector3(T.x + 0.4, T.h + 0.0035, T.z + 0.02), ry: Math.PI / 2 + 0.22 };
+
 const BOOK_ASPECT = (BU.D - 0.03) / (BU.W - 0.03);
 const rightTex = makePageTexture(BOOK_ASPECT), leftTex = makePageTexture(BOOK_ASPECT), leafTex = makePageTexture(BOOK_ASPECT), leafBackTex = makePageTexture(BOOK_ASPECT);
 BU.rightMat.map = rightTex; BU.leftMat.map = leftTex; BU.leafFront.map = leafTex; BU.leafBack.map = leafBackTex;
@@ -213,6 +224,7 @@ function setMode(m) {
   $('writer').hidden = m !== 'writing';
   $('reader').hidden = m !== 'reading';
   $('spots').setAttribute('aria-hidden', m === 'walk' ? 'false' : 'true');
+  $('seatActs').hidden = m !== 'seat';
 }
 const chairOf = (which) => (which === 'write' ? WC : RC);
 const chairFwd = (c) => new THREE.Vector2(Math.sin(c.ry), Math.cos(c.ry));
@@ -221,7 +233,7 @@ function seatPose(which) {
   const pos = new THREE.Vector3(c.x + f.x * 0.04, SIT_EYE, c.z + f.y * 0.04);
   // 앉은 눈으로 책상을 내려다보는 자연스러운 각도(약 −20°)
   // 쓰는 자리: 책상 너머 벽감까지 보이게 살짝만 내려다본다 · 읽는 자리: 책상 끝을 더 내려다본다
-  const drop = which === 'write' ? 0.24 : 0.34;
+  const drop = 0.3;
   const look = new THREE.Vector3(pos.x + f.x, pos.y - drop, pos.z + f.y);
   return { pos, look, yaw: yawTo(f.x, f.y), pitch: -Math.atan(drop), fov: isPortrait() ? 68 : 56 };
 }
@@ -241,7 +253,10 @@ async function sit(which) {
   await flyCam(sp.pos, sp.look, sp.fov, 1.0, easeIO, (k, p) => { p.y -= Math.sin(Math.PI * k) * 0.035; });
   rig.pos.copy(sp.pos); rig.eye = SIT_EYE; aimAt(sp.look); rig.fov = rig.tFov = sp.fov;
   busy = false;
-  if (which === 'read') openBook();
+}
+function nearestSeat() {
+  const p = camera.position, d = (c) => Math.hypot(p.x - c.x, p.z - c.z);
+  return d(WC) <= d(RC) ? 'write' : 'read';
 }
 // 일어나기: 앉은 자리에서 그대로 일어나 의자 뒤로 반 걸음(같은 방향을 본 채로) → 다시 걷기
 async function stand() {
@@ -273,7 +288,7 @@ const val = (n) => form.querySelector(`input[name="${n}"]:checked`)?.value;
 function drawWritePage() {
   const identity = val('identity');
   const name = identity !== 'anonymous' && nameIn.value.trim() ? nameIn.value.trim() : '';
-  writeTex.draw({ eyebrow: 'ONE PAGE', body: bodyIn.value, placeholder: '당신의 한 페이지를 남겨주세요.', name: name || (identity === 'anonymous' ? '익명' : ''), size: 44 });
+  writeTex.draw({ eyebrow: 'ONE PAGE', body: bodyIn.value, placeholder: '당신의 한 페이지를 남겨주세요.', name: name || (identity === 'anonymous' ? '익명' : ''), size: 62, minSize: 34 });
 }
 function syncForm() {
   const identity = val('identity');
@@ -300,23 +315,39 @@ function startOrbit(o) {
 }
 function writeOrbit() {
   // 쓰는 사람 쪽(−x)에서 거의 위로 내려다본다. 넓은 화면은 입력 카드를 피해 종이를 왼쪽으로, 세로 화면은 위쪽으로
-  const c = PAGE_DESK.pos.clone();
-  if (narrow()) c.x -= 0.1; else c.z += 0.13;
-  return { kind: 'write', center: c, r: narrow() ? 0.62 : 0.56, theta: 0.32, phi: -Math.PI / 2, fov: narrow() ? 60 : 42,
-    min: 0.3, max: 0.9, thMin: 0.08, thMax: 0.75, phiMin: -Math.PI / 2 - 0.6, phiMax: -Math.PI / 2 + 0.6 };
+  const pd = PAGE_AT(seat), f = pd.f, c = pd.pos.clone();
+  const fov = narrow() ? 60 : 42;
+    // 2026-11-13: 종이 한가운데 바로 위에서 본다. 넓은 화면은 오른쪽 입력 카드에 가리지 않을 만큼, 좁은 화면은 아래 입력 칸 위쪽에 들어오게
+  // 좁은 화면: 위 단추 줄(약 110px)과 아래 입력 칸 사이, 실제로 보이는 빈 곳의 한가운데에 종이를 꽉 차게 둔다
+    let r;
+    if (narrow()) {
+      const H = innerHeight, top = 110, fr = $('writer').getBoundingClientRect(), bottom = (fr.height ? fr.top : H * 0.5) - 14;
+      const vis = Math.max(0.2, (bottom - top) / H), cy = (top + bottom) / 2 / H;
+      r = fitR(0.23, 0.33, fov, vis * 0.94, 0.92);
+      const sh = (0.5 - cy) * 2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2) * r; c.add(new THREE.Vector3(-f.x * sh, 0, -f.y * sh));
+    } else r = fitR(0.23, 0.33, fov, 0.74, Math.min(1, Math.max(0.36, (innerWidth - 2 * 440) / innerWidth)));
+  const ph = Math.atan2(-f.x, -f.y);
+  return { kind: 'write', center: c, r, theta: 0.1, phi: ph, fov,
+    min: 0.25, max: Math.max(0.9, r * 1.4), thMin: 0.05, thMax: 0.75, phiMin: ph - 0.6, phiMax: ph + 0.6 };
 }
 
-let pageAtDesk = false;
+let pageAtDesk = false, pageSeat = null;
+async function returnPage() {
+  if (!pageAtDesk) return;
+  await fly(page, { pos: page.position.clone(), ry: page.rotation.y }, PAGE_TRAY(), 0.9, 0.05);
+  pageAtDesk = false; pageSeat = null;
+}
 async function openWriting() {
   if (busy) return;
   if (mode === 'reading') await closeBook(true);
-  if (!(mode === 'seat' && seat === 'write')) await sit('write');
+  if (mode !== 'seat') await sit(nearestSeat());
   busy = true;
+  if (pageAtDesk && pageSeat !== seat) await returnPage();
   setMode('writing');
   syncForm();
   // 종이가 트레이에서 쓰는 자리로 천천히 미끄러져 오고, 시선도 함께 종이 위로(1.4 s)
   const camGo = startOrbit({ ...writeOrbit(), sec: 1.5 });
-  if (!pageAtDesk) { await fly(page, PAGE_TRAY(), PAGE_DESK, 1.3, 0.05); pageAtDesk = true; }
+  if (!pageAtDesk) { await fly(page, PAGE_TRAY(), PAGE_AT(seat), 1.3, 0.05); pageAtDesk = true; pageSeat = seat; }
   await camGo;
   busy = false;
   if (!narrow()) bodyIn.focus({ preventScroll: true });
@@ -354,7 +385,7 @@ form.addEventListener('submit', async (e) => {
     }
     $('writer').hidden = true;
     await sendPage();
-    if (res?.page) pages = [res.page, ...pages.filter((p) => p.id !== res.page.id)];
+    if (res?.page) { pages = [res.page, ...pages.filter((p) => p.id !== res.page.id)]; floaters.setPages(pages); }
     bodyIn.value = ''; nameIn.value = ''; $('isPublic').checked = false; $('showName').checked = false;
     form.querySelector('input[name="identity"][value="anonymous"]').checked = true;
     syncForm();
@@ -372,8 +403,9 @@ async function sendPage() {
   mode = 'sending'; app.dataset.mode = 'sending'; rig.orbit = null;
   const vp = isPortrait() ? { pos: [0.2, 1.75, -1.0], look: [1.6, 0.72, -3.0], fov: 64 } : { pos: [-0.75, 1.8, -0.85], look: [1.4, 0.72, -3.05], fov: 50 };
   const camGo = flyCam(new THREE.Vector3(...vp.pos), new THREE.Vector3(...vp.look), vp.fov, 1.2);
-  const up = { pos: PAGE_DESK.pos.clone().add(new THREE.Vector3(0, 0.22, -0.05)), ry: PAGE_DESK.ry };
-  await fly(page, PAGE_DESK, up, 0.6, 0, (k) => { page.rotation.x = -0.35 * k; });
+  const from = { pos: page.position.clone(), ry: page.rotation.y };
+  const up = { pos: from.pos.clone().add(new THREE.Vector3(0, 0.22, 0)), ry: from.ry };
+  await fly(page, from, up, 0.6, 0, (k) => { page.rotation.x = -0.35 * k; });
   const top = book.localToWorld(new THREE.Vector3(0.02, BU.top + 0.003, 0));
   const above = { pos: top.clone().add(new THREE.Vector3(0, 0.16, 0)), ry: book.rotation.y };   // 종이 위쪽 = 책 페이지 위쪽
   const coverOpen = tween(0.8, (k) => { BU.hinge.rotation.z = Math.PI * 0.94 * k; }, easeOut);
@@ -386,11 +418,11 @@ async function sendPage() {
   const mine = traces.addMine();   // 벽감에 스티커 하나 조용히
   if (mine) { const s = mine.userData.s; tween(0.8, (k) => mine.scale.set(s * k, s * k, 0.12), easeOut); }
   await tween(0.7, (k) => { BU.hinge.rotation.z = Math.PI * 0.94 * (1 - k); });
-  pageAtDesk = false; placePage(PAGE_TRAY());
-  writeTex.draw({ eyebrow: 'ONE PAGE', placeholder: '당신의 한 페이지를 남겨주세요.', name: '익명', size: 44 });
+  pageAtDesk = false; pageSeat = null; placePage(PAGE_TRAY());
+  writeTex.draw({ eyebrow: 'ONE PAGE', placeholder: '당신의 한 페이지를 남겨주세요.', name: '익명', size: 62, minSize: 34 });
   page.visible = true;
-  setMode('seat'); seat = 'write';
-  const sp = seatPose('write');
+  setMode('seat');
+  const sp = seatPose(seat);
   await flyCam(sp.pos, sp.look, sp.fov, 1.3);
   rig.pos.copy(sp.pos); aimAt(sp.look); rig.fov = rig.tFov = sp.fov;
 }
@@ -409,7 +441,7 @@ function drawSpread() {
     $('readText').textContent = '아직 펼쳐 볼 수 있는 페이지가 없습니다.';
   } else {
     const p = pages[idx];
-    rightTex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${idx + 1} / ${pages.length}`, size: 66 });
+    rightTex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${idx + 1} / ${pages.length}`, size: 46 });
     $('rpos').textContent = `${idx + 1} / ${pages.length}`;
     $('readText').textContent = `${p.name || '익명'}: ${p.body}`;
   }
@@ -417,25 +449,24 @@ function drawSpread() {
   $('next').disabled = idx >= pages.length - 1;
 }
 function readOrbit() {
-  // 읽는 의자 쪽(+x)에서 펼친 책을 거의 바로 위에서 내려다본다
-  // 가운데 = 펼친 두 면의 한가운데(책등). 책의 로컬 −x(책등) 방향으로 반 폭만큼
-  const spine = new THREE.Vector3(-BU.W / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), BOOK_DESK.ry);
-  // 세로 화면: 펼친 두 면이 화면보다 넓으므로 글이 있는 오른쪽 면을 화면 가득(두 손가락으로 벌리거나 모아 조절)
-  const P = isPortrait();
-  // 앉은 채 상체를 조금 숙여 내려다보는 높이·각도(서서 내려다보는 느낌이 들지 않게)
-  return { kind: 'read', center: (P ? BOOK_DESK.pos.clone() : BOOK_DESK.pos.clone().add(spine)).add(new THREE.Vector3(0, 0.02, 0)), r: P ? 0.6 : 0.62, theta: P ? 0.3 : 0.55, phi: Math.PI / 2 + 0.22, fov: P ? 58 : 44,
-    min: 0.28, max: 1.1, thMin: 0.05, thMax: 1.0, phiMin: Math.PI / 2 + 0.22 - 0.7, phiMax: Math.PI / 2 + 0.22 + 0.7 };
+  // 앉은 의자 쪽에서 펼친 책을 내려다본다(세로 화면은 글이 있는 오른쪽 면을 화면 가득)
+  const bd = BOOK_AT(seat);
+  const spine = new THREE.Vector3(-BU.W / 2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), bd.ry);
+  const P = isPortrait(), ph = Math.atan2(-bd.f.x, -bd.f.y);
+  return { kind: 'read', center: (P ? bd.pos.clone() : bd.pos.clone().add(spine)).add(new THREE.Vector3(0, 0.02, 0)), r: P ? fitR(0.29, 0.38, 58, 0.8) : fitR(0.58, 0.38, 44, 0.8), theta: 0.1,   /* 2026-11-13: 펼친 책 한가운데 바로 위, 화면에 꼭 맞게 */ phi: ph, fov: P ? 58 : 44,
+    min: 0.28, max: 1.6, thMin: 0.05, thMax: 1.0, phiMin: ph - 0.7, phiMax: ph + 0.7 };
 }
 async function openBook() {
   if (busy) return;
   if (mode === 'writing') closeWriting();
-  if (!(mode === 'seat' && seat === 'read')) { await sit('read'); return; }   // 앉은 뒤 sit()이 다시 부른다
+  if (mode !== 'seat') await sit(nearestSeat());
   busy = true;
+  if (pageAtDesk) await returnPage();
   setMode('reading');
   idx = 0; drawSpread();
   // 방명록이 받침에서 읽는 자리 앞 책상으로 천천히 날아와(1.6 s) 표지가 열린다(1.2 s)
   const camGo = startOrbit({ ...readOrbit(), sec: 1.8 });
-  await fly(book, BOOK_LEDGE, BOOK_DESK, 1.6, 0.3);
+  await fly(book, BOOK_LEDGE, BOOK_AT(seat), 1.6, 0.3);
   bookOut = true;
   await tween(1.2, (k) => { BU.hinge.rotation.z = Math.PI * 0.985 * k; });
   await camGo;
@@ -446,7 +477,7 @@ async function closeBook(quiet) {
   if (!bookOut) return;
   busy = true;
   rig.orbit = null;
-  const sp = seatPose('read');
+  const sp = seatPose(seat);
   const camGo = quiet ? null : flyCam(sp.pos, sp.look, sp.fov, 1.6);
   await tween(0.9, (k) => { BU.hinge.rotation.z = Math.PI * 0.985 * (1 - k); });
   await fly(book, { pos: book.position.clone(), ry: book.rotation.y }, BOOK_LEDGE, 1.3, 0.28);
@@ -463,7 +494,7 @@ async function turn(dir) {
   busy = true;
   const lh = BU.leafHinge;
   const cur = pages[idx], nxt = pages[j];
-  const drawP = (tex, p, i) => tex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${i + 1} / ${pages.length}`, size: 66 });
+  const drawP = (tex, p, i) => tex.draw({ eyebrow: 'ONE PAGE', body: p.body, name: p.name || '익명', foot: `${i + 1} / ${pages.length}`, size: 46 });
   lh.visible = true;
   if (dir > 0) { drawP(leafTex, cur, idx); idx = j; drawSpread(); await tween(0.95, (k) => { lh.rotation.z = Math.PI * 0.985 * k; }); }
   else { drawP(leafTex, nxt, j); lh.rotation.z = Math.PI * 0.985; await tween(0.95, (k) => { lh.rotation.z = Math.PI * 0.985 * (1 - k); }); idx = j; drawSpread(); }
@@ -487,7 +518,7 @@ function leaveToRoom() {
 const PICK = new Map();
 const tag = (obj, key) => obj.traverse((o) => { if (o.isMesh) PICK.set(o, key); });
 tag(writeChair, 'writeChair'); tag(readChair, 'readChair'); tag(tray, 'tray'); tag(page, 'page'); tag(book, 'book');
-const LABEL = { writeChair: '쓰는 자리', readChair: '읽는 자리', tray: '빈 페이지', page: '빈 페이지', book: '방명록' };
+const LABEL = { writeChair: '자리에 앉기', readChair: '자리에 앉기', tray: '빈 페이지', page: '빈 페이지', book: '방명록' };
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 function hitAt(x, y) {
   ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
@@ -497,7 +528,7 @@ function hitAt(x, y) {
 const pickKey = (h) => (h ? PICK.get(h.object) ?? null : null);
 function act(key) {
   if (busy) return;
-  if (key === 'writeChair') return mode === 'seat' && seat === 'write' ? openWriting() : sit('write');
+  if (key === 'writeChair') return sit('write');
   if (key === 'readChair') return sit('read');
   if (key === 'tray' || key === 'page') return mode === 'writing' ? null : openWriting();
   if (key === 'book') return mode === 'reading' ? null : openBook();
@@ -598,7 +629,8 @@ canvas.addEventListener('wheel', (e) => {
   const dir = Math.sign(wheelAcc); wheelAcc = 0;
   zoomStep(dir);
 }, { passive: false });
-$('spots').addEventListener('click', (e) => { const b = e.target.closest('button[data-go]'); if (b) (b.dataset.go === 'read' ? openBook() : sit('write')); });
+$('spots').addEventListener('click', (e) => { if (e.target.closest('button[data-go]')) sit(nearestSeat()); });
+$('seatActs').addEventListener('click', (e) => { const b = e.target.closest('button[data-go]'); if (b) (b.dataset.go === 'read' ? openBook() : openWriting()); });
 $('stand').addEventListener('click', stand);
 const keys = { f: 0, t: 0 };
 addEventListener('keydown', (e) => {
@@ -681,6 +713,7 @@ renderer.setAnimationLoop((now) => {
     }
   }
   visitors.update(now / 1000, dt, reduced);
+  if (!reduced) floaters.update(now / 1000);
   pageGlow.update(now / 1000, page, page.visible && !pageAtDesk && (mode === 'walk' || mode === 'seat'));
   renderer.render(scene, camera);
 });
@@ -688,7 +721,7 @@ renderer.setAnimationLoop((now) => {
 /* ---------- 데이터 ---------- */
 async function refreshTrace() {
   try {
-    const d = await backend.publicPages(); pages = d.pages || [];
+    const d = await backend.publicPages(); pages = d.pages || []; floaters.setPages(pages);
     if (d.trace) { setLevel(d.trace.leaves || 0); traces.setLevel(Math.max(d.trace.visits || 0, d.trace.leaves || 0)); }
   } catch (e) { /* 그대로 */ }
 }

@@ -104,20 +104,21 @@ function paper(ctx, w, h, base) {
 /* ---------- 문 ---------- */
 
 // 문 옆 명판: 하이랑 라벨 스티커(첫 줄) 모양 — 위아래가 반원으로 오목한 모스 그린 라벨에 아이보리 글자
-export function plaqueTexture() {
+// center: 명판이 문 위 가운데에 놓일 때(세로 화면) 두 줄을 캔버스 가운데에 맞춘다(2026-11-13: 모바일에서 아랫줄이 왼쪽으로 치우쳐 보였다)
+export function plaqueTexture(center = false) {
   // 처음 디자인(심볼 + 두 줄 글자, 바탕 없이 벽에 바로)으로, 글자를 굵고 크게 해 멀리서도 읽히게
   const W = 1600, H = 380;
   const [c, x] = canvas(W, H);
   x.clearRect(0, 0, W, H);
   // 2026-11-11: 명판 왼쪽 심볼은 뺀다(클라이언트 요청 — 심볼은 문짝에). 글자 위치는 그대로
-  x.textAlign = 'left'; x.textBaseline = 'middle';
+  x.textAlign = center ? 'center' : 'left'; x.textBaseline = 'middle';
   x.fillStyle = COLORS.ink;
   let fs = 108;
   do { x.font = `800 ${fs}px ${FONTS.en}`; fs -= 2; } while (x.measureText('SECRET READING ZONE').width > W - 365 && fs > 60);   // 캔버스 안에 다 들어오게
-  x.fillText('SECRET READING ZONE', 345, H * 0.4);
+  x.fillText('SECRET READING ZONE', center ? W / 2 : 345, H * 0.4);
   x.fillStyle = COLORS.moss;
   x.font = `700 66px ${FONTS.ko}`;
-  x.fillText('비밀독서구역 하이랑', 349, H * 0.72);
+  x.fillText('비밀독서구역 하이랑', center ? W / 2 : 349, H * 0.72);
   return toTex(c);
 }
 

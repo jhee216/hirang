@@ -23,7 +23,7 @@ html,body{margin:0;height:100%;background:var(--ivory);color:var(--ink);overflow
 .spots button,.stand,.ghost,.turn{white-space:nowrap;font:600 14px/1 Pretendard,Inter,sans-serif;color:var(--moss);background:rgba(255,252,244,.92);border:1px solid rgba(79,95,76,.22);border-radius:999px;padding:13px 20px;cursor:pointer;backdrop-filter:blur(6px)}
 .spots button:hover,.stand:hover,.ghost:hover,.turn:hover{background:#fff}
 .spots button:focus-visible,.stand:focus-visible,.ghost:focus-visible,.turn:focus-visible,.primary:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
-#app:not([data-mode="overview"]) .spots{opacity:0;pointer-events:none}
+#app:not([data-mode="overview"]) .spots:not(.seat-acts){opacity:0;pointer-events:none}
 .stand{position:fixed;left:32px;bottom:30px;z-index:16}
 .hint{position:fixed;z-index:14;pointer-events:none;font:600 12.5px/1 Pretendard,sans-serif;color:var(--ivory);background:var(--moss);padding:8px 12px;border-radius:999px;opacity:0;transform:translate(-50%,-150%);transition:opacity .15s}
 .hint.on{opacity:1}
