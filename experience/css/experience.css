@@ -221,3 +221,5 @@ button{font:inherit;color:inherit;cursor:pointer}
 .reader.large~.r-x:hover{background:var(--moss);color:var(--ivory)}
 @media (min-width:900px){.reader.large~.r-x{font-size:16px}}
 .reader.large+.r-text{padding-right:calc(clamp(20px,4vw,44px) + 1.6em)}
+/* 2026-11-14: PHOTO PAGE 입구는 전시장 모니터(넓은 화면)용 — 좁은 휴대폰 화면에서는 로고와 겹치지 않게 숨긴다 */
+@media (max-width:640px){#photoBtn{display:none}}

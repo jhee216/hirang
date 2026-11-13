@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YOUR PHOTO PAGE · HIRANG</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/png" href="../../favicon-symbol.png">
+<link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+:root{--green:#4F5F4C;--lav:#C1B1D1;--ivory:#FFF9EA;--paper:#FBF6EA;--ink:#2E3A2C;--muted:#7A7568;--line:rgba(79,95,76,.18)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ivory);color:var(--ink);font-family:"Pretendard",-apple-system,"Apple SD Gothic Neo",sans-serif;-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+.dl{max-width:560px;margin:0 auto;padding:max(28px,env(safe-area-inset-top)) 22px max(40px,env(safe-area-inset-bottom))}
+.dl-head{display:flex;flex-direction:column;align-items:flex-start;gap:18px;padding-bottom:26px;border-bottom:1px solid var(--line)}
+.dl-head img{height:28px;width:auto;display:block}
+.dl-head h1{margin:0;font:600 26px/1.1 Pretendard,sans-serif;letter-spacing:.02em;color:var(--green)}
+.dl-date{margin:0;font:500 12px/1 Pretendard,sans-serif;letter-spacing:.26em;color:var(--muted)}
+.dl-item{padding:30px 0;border-bottom:1px solid var(--line)}
+.dl-label{margin:0 0 14px;font:600 11px/1 Pretendard,sans-serif;letter-spacing:.24em;color:var(--muted)}
+.dl-img{display:block;width:100%;height:auto;background:var(--paper);-webkit-touch-callout:default}
+.dl-item.bm .dl-img{width:auto;max-width:100%;max-height:72vh;margin:0 auto}
+.dl-btn{display:block;width:100%;margin-top:16px;padding:17px 18px;border:1px solid var(--green);border-radius:2px;background:var(--green);color:var(--ivory);text-align:center;text-decoration:none;font:600 12px/1 Pretendard,sans-serif;letter-spacing:.22em}
+.dl-btn.sub{background:transparent;color:var(--green)}
+.dl-note{margin:24px 0 0;font:500 13px/1.7 Pretendard,sans-serif;color:var(--muted)}
+.dl-msg{padding:60px 0;font:500 15px/1.7 Pretendard,sans-serif}
+.dl-msg b{display:block;margin-bottom:10px;font:600 13px/1 Pretendard,sans-serif;letter-spacing:.24em;color:var(--green)}
+</style>
+</head>
+<body>
+<main class="dl">
+  <header class="dl-head">
+    <img src="../assets/hirang-logo.png" alt="hirang">
+    <h1>YOUR PHOTO PAGE</h1>
+    <p class="dl-date" id="date"></p>
+  </header>
+  <div id="list" aria-live="polite"><p class="dl-msg" id="msg">LOADING…</p></div>
+  <p class="dl-note" id="note" hidden></p>
+</main>
+<script type="module" src="download.js"></script>
+</body>
+</html>

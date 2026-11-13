@@ -61,6 +61,7 @@
       <button type="button" id="skipIntro" class="ghost">바로 입장</button>
       <button type="button" id="bgmBtn" class="ghost" aria-pressed="true" hidden>♪ BGM 켜짐</button>
       <input type="range" id="bgmVol" class="bgm-vol" min="0" max="100" step="1" value="40" aria-label="BGM 음량" title="BGM 음량" hidden>
+      <a class="ghost" id="photoBtn" href="../photo/">PHOTO PAGE</a>
       <a class="ghost" id="homeBtn" href="../index.html?view=website">홈으로 돌아가기</a>
     </nav>
   </header>
@@ -137,7 +138,10 @@
 <script type="module" src="js/main.js" onerror="document.documentElement.classList.add('no-webgl')"></script>
 <script>
   // 외부 라이브러리 로드 실패 등으로 경험이 시작되지 않으면 대체 UI로 전환
-  setTimeout(function(){ if(!window.__hirang) document.documentElement.classList.add('no-webgl') }, 15000);
+  // 2026-11-13: 느린 휴대폰에서는 3D가 15초 넘게 걸릴 수 있다 — 코드가 아예 시작되지 못했을 때만 15초에 대체 화면으로,
+  // 시작은 했으면 60초까지 기다린다(그 사이 3D가 뜨면 대체 화면은 다시 걷힌다: main.js 끝)
+  setTimeout(function(){ if(!window.__hirang && !window.__hirangBoot) document.documentElement.classList.add('no-webgl') }, 15000);
+  setTimeout(function(){ if(!window.__hirang) document.documentElement.classList.add('no-webgl') }, 60000);
 </script>
 </body>
 </html>

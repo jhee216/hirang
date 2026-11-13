@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HIRANG PHOTO PAGE</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="../favicon-symbol.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="photo.css">
+</head>
+<body>
+<div class="pp" id="app" data-step="enter">
+  <header class="pp-top">
+    <a class="pp-logo" href="../experience/" aria-label="HIRANG"><img src="assets/hirang-logo.png" alt="hirang"></a>
+    <ol class="pp-steps" aria-label="Steps">
+      <li data-s="enter"><b>01</b> ENTER</li>
+      <li data-s="layout"><b>02</b> LAYOUT</li>
+      <li data-s="capture"><b>03</b> CAPTURE</li>
+      <li data-s="preview"><b>04</b> PREVIEW</li>
+      <li data-s="save"><b>05</b> SAVE</li>
+    </ol>
+    <a class="pp-back" href="../experience/">BACK TO SECRET ZONE</a>
+  </header>
+
+  <!-- STEP 01 -->
+  <section class="pp-step" id="s-enter" aria-labelledby="h-enter">
+    <div class="pp-enter">
+      <p class="pp-eye">STEP 01 — ENTER PHOTO PAGE</p>
+      <h1 id="h-enter">HIRANG<br>PHOTO PAGE</h1>
+      <p class="pp-lede">A PAGE OF YOU</p>
+      <button type="button" class="pp-btn pp-primary" id="btnStart">START</button>
+    </div>
+  </section>
+
+  <!-- STEP 02 -->
+  <section class="pp-step" id="s-layout" aria-labelledby="h-layout" hidden>
+    <p class="pp-eye">STEP 02 — SELECT YOUR LAYOUT</p>
+    <h2 id="h-layout" class="pp-sr">SELECT YOUR LAYOUT</h2>
+    <div class="pp-layouts">
+      <button type="button" class="pp-card" data-layout="editorial">
+        <span class="pp-thumb pp-thumb-a" aria-hidden="true"><i></i></span>
+        <span class="pp-card-t">EDITORIAL PAGE</span>
+        <span class="pp-card-s">A PAGE OF YOU · 1 PHOTO</span>
+      </button>
+      <button type="button" class="pp-card" data-layout="bookmark">
+        <span class="pp-thumb pp-thumb-c" aria-hidden="true"><i></i><i></i></span>
+        <span class="pp-card-t">BOOKMARK STRIP</span>
+        <span class="pp-card-s">TWO MOMENTS, ONE PAGE · 2 PHOTOS</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- STEP 03 -->
+  <section class="pp-step" id="s-capture" aria-labelledby="h-capture" hidden>
+    <div class="pp-cap-head">
+      <p class="pp-eye">STEP 03 — CAPTURE</p>
+      <p class="pp-shot" id="shotLabel">PHOTO 01</p>
+    </div>
+    <div class="pp-stage">
+      <video id="video" playsinline muted autoplay></video>
+      <img id="still" alt="" hidden>
+      <div class="pp-guide" id="guide" aria-hidden="true"></div>
+      <div class="pp-count" id="count" aria-live="assertive"></div>
+      <div class="pp-flash" id="flash" aria-hidden="true"></div>
+      <div class="pp-camerr" id="camErr" hidden>
+        <p id="camErrMsg">Camera access is needed to take your photo. Allow camera access in your browser and try again.</p>
+        <button type="button" class="pp-btn" id="btnCamRetry">TRY AGAIN</button>
+      </div>
+    </div>
+    <div class="pp-actions" id="capActions">
+      <button type="button" class="pp-btn" id="btnLayoutBack">CHANGE LAYOUT</button>
+      <button type="button" class="pp-btn pp-primary" id="btnShoot">TAKE PHOTO</button>
+    </div>
+    <div class="pp-actions" id="reviewActions" hidden>
+      <button type="button" class="pp-btn" id="btnRetake">RETAKE</button>
+      <button type="button" class="pp-btn pp-primary" id="btnNext">NEXT</button>
+    </div>
+  </section>
+
+  <!-- STEP 04 -->
+  <section class="pp-step" id="s-preview" aria-labelledby="h-preview" hidden>
+    <div class="pp-split">
+      <div class="pp-result"><img id="resultImg" alt="Your photo page"></div>
+      <div class="pp-side">
+        <p class="pp-eye">STEP 04 — PREVIEW</p>
+        <h2 id="h-preview" class="pp-h2">YOUR PAGE</h2>
+        <p class="pp-meta" id="dateLabel"></p>
+        <div class="pp-field">
+          <p class="pp-label">FRAME</p>
+          <div class="pp-swatches" id="swatches" role="radiogroup" aria-label="Frame color"></div>
+        </div>
+        <div class="pp-col">
+          <button type="button" class="pp-btn pp-primary" id="btnToSave">SAVE YOUR PAGE</button>
+          <button type="button" class="pp-btn" id="btnRetakeAll">RETAKE PHOTOS</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 05 -->
+  <section class="pp-step" id="s-save" aria-labelledby="h-save" hidden>
+    <div class="pp-split">
+      <div class="pp-result"><img id="resultImg2" alt="Your photo page"></div>
+      <div class="pp-side">
+        <p class="pp-eye">STEP 05 — SAVE YOUR PAGE</p>
+        <h2 id="h-save" class="pp-h2">SAVE YOUR PAGE</h2>
+        <div class="pp-tabs" role="tablist">
+          <button type="button" role="tab" class="pp-tab" id="tabQr" aria-selected="true">QR CODE</button>
+          <button type="button" role="tab" class="pp-tab" id="tabAir" aria-selected="false">AIRDROP</button>
+        </div>
+        <div class="pp-panel" id="panelQr">
+          <div class="pp-qr" id="qrBox"><p class="pp-meta" id="qrStatus">PREPARING…</p></div>
+          <p class="pp-note" id="qrNote" hidden>Scan with your phone camera to download your photos.<br>Available for 24 hours.</p>
+          <button type="button" class="pp-btn" id="btnQrRetry" hidden>TRY AGAIN</button>
+        </div>
+        <div class="pp-panel" id="panelAir" hidden>
+          <p class="pp-note" id="airNote">Choose AirDrop in the share sheet and select your device.</p>
+          <button type="button" class="pp-btn pp-primary" id="btnShare">SHARE</button>
+          <button type="button" class="pp-btn" id="btnDownload">DOWNLOAD</button>
+        </div>
+        <div class="pp-col pp-end">
+          <button type="button" class="pp-btn" id="btnFinish">FINISH</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="pp-toast" id="toast" role="status" aria-live="polite"></p>
+</div>
+<canvas id="work" hidden></canvas>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script type="module" src="photo.js"></script>
+</body>
+</html>

@@ -384,7 +384,7 @@ export function buildLounge({ sym, logoImg, merged = false }) {
   const table = buildTable(); table.position.set(L.table.x, 0, L.table.z); group.add(table);
   const writeChair = buildChair(); writeChair.position.set(L.writeChair.x, 0, L.writeChair.z); writeChair.rotation.y = L.writeChair.ry; group.add(writeChair);
   const readChair = buildChair(); readChair.position.set(L.readChair.x, 0, L.readChair.z); readChair.rotation.y = L.readChair.ry; group.add(readChair);
-  const tray = buildTray(); tray.position.set(L.table.x - 0.05, L.table.h, L.table.z - 0.2); tray.rotation.y = Math.PI / 2 + 0.12; group.add(tray);
+  const tray = buildTray(); tray.position.set(L.table.x - 0.45, L.table.h, L.table.z - 0.1); tray.rotation.y = Math.PI / 2 + 0.12; group.add(tray);   // 2026-11-13: 책상 가운데는 종이·책 자리로 비우고 트레이는 쓰는 의자 쪽 끝에
   // 책등이 벽 쪽(+x), 앞표지는 방 쪽으로 열린다
   const book = buildGuestbook(); book.position.set(RX + 0.12, L.ledge.y + 0.004, ledgeZ); book.rotation.y = Math.PI - 0.1;
   group.add(book);

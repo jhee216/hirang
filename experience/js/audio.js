@@ -11,6 +11,7 @@ const READING_DUCK = 0.45;   // 책·패키지를 펼쳐 읽는 동안 음량 �
 const FADE_IN = 3.0;
 
 export function createAudio() {
+  let stepBuf = null;
   let ctx = null, master = null, duck = null, source = null, buffer = null, loading = null, meter = null;
   let on = true, volume = 0.4,   // 2026-11-11: 처음 음량 60 → 40
   reading = false, wanted = false, startedAt = 0;
@@ -99,6 +100,23 @@ export function createAudio() {
       if (r === reading) return;
       reading = r;
       if (ctx) ramp(duck, r ? READING_DUCK : 1, r ? 1.2 : 2.0);
+    },
+    // 2026-11-14: 나무 바닥을 걷는 낮고 부드러운 발소리 한 번(배경음과 같은 켜기·음량을 따른다). 매번 조금씩 다르게
+    step(k = 1) {
+      if (!ctx || !on || ctx.state !== 'running' || k < 0.2) return;
+      const t = ctx.currentTime, amp = Math.min(1, volume * 1.6) * k;
+      if (!stepBuf) {
+        stepBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.2), ctx.sampleRate);
+        const d = stepBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+      }
+      const n = ctx.createBufferSource(); n.buffer = stepBuf; n.playbackRate.value = 0.75 + Math.random() * 0.3;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 550 + Math.random() * 250;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16 * amp + 1e-4, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      n.connect(lp).connect(g).connect(ctx.destination); n.start(t); n.stop(t + 0.2);
+      const o = ctx.createOscillator(); o.frequency.setValueAtTime(105 + Math.random() * 15, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.09);
+      const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.12 * amp + 1e-4, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(og).connect(ctx.destination); o.start(t); o.stop(t + 0.14);
     },
     fadeOut(sec = 3) {
       if (!ctx) return;

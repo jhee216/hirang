@@ -40,12 +40,14 @@ function webglOK() {
 }
 // ?fallback 을 붙이면 대체 UI를 강제로 확인할 수 있다(QA용)
 if (!webglOK() || !window.gsap || new URLSearchParams(location.search).has('fallback')) {
+  window.__noWebglHard = true;
   document.documentElement.classList.add('no-webgl');
   throw new Error('WebGL unavailable — fallback UI shown');
 }
 if (reduced) gsap.globalTimeline.timeScale(2.4);
 
 /* ---------- 렌더러 · 씬 ---------- */
+window.__hirangBoot = true;   // 2026-11-13: 3D 코드가 시작됨(느려도 대체 화면으로 넘기지 않는다)
 const renderer = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -56,7 +58,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;   // 후처리가 장면을 여러 번 그리므로 그림자는 프레임마다 한 번만 갱신
 setAnisotropy(renderer);
-ui.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); document.documentElement.classList.add('no-webgl'); });
+ui.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); window.__noWebglHard = true; document.documentElement.classList.add('no-webgl'); });
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(COLORS.ivory);
@@ -65,7 +67,7 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.38;
 
-const camera = new THREE.PerspectiveCamera(CAMERA.fov, innerWidth / innerHeight, 0.03, 60);
+const camera = new THREE.PerspectiveCamera(CAMERA.fov, innerWidth / innerHeight, 0.08, 60);   // 2026-11-13: near 0.03 → 0.08 — 휴대폰에서 멀리 있는 벽·계단 면이 깜빡이던(깊이 정밀도 부족) 것을 줄인다
 const isPortrait = () => innerWidth / innerHeight < 0.8;
 scene.add(camera);
 const rig = new CameraRig(camera);
@@ -349,7 +351,7 @@ function pick(list, x, y) {
 function pickWorld(x, y) {
   ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  for (const h of ray.intersectObjects([room.group, lounge.group], true)) {
+  for (const h of ray.intersectObjects([room.group, lounge.group, ...lounge.pickExtra], true)) {
     const o = h.object;
     if (!o.isMesh || !o.visible) continue;
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
@@ -379,6 +381,28 @@ const roomLimit = (p) => {
   return p;
 };// 라운지 쪽(입구 띠·옆방)이면 라운지의 걷기 범위를, 아니면 원래 방의 범위를 쓴다
 rig.limit = (p) => (lounge.inLounge(p) ? lounge.limitW(p) : roomLimit(p));
+rig.onStep = (k) => audio.step(k);   // 2026-11-14: 걸을 때 발소리(소리를 켠 경우)
+// 2026-11-13: 곧은 길이 전시물(셸프·테이블 등) 바닥 영역을 지나면, 돌아갈 모서리 하나를 고른다(없으면 null)
+function blocked(a, b) {
+  for (let i = 1; i < 24; i++) {
+    const t = i / 24, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+    for (const [x0, z0, x1, z1] of room.obstacles) if (x > x0 - R && x < x1 + R && z > z0 - R && z < z1 + R) return [x0, z0, x1, z1];
+  }
+  return null;
+}
+function detour(a, b) {
+  const box = blocked(a, b);
+  if (!box) return null;
+  const m = R + 0.2, [x0, z0, x1, z1] = box;
+  let best = null, bl = Infinity;
+  for (const [x, z] of [[x0 - m, z0 - m], [x1 + m, z0 - m], [x0 - m, z1 + m], [x1 + m, z1 + m]]) {
+    const c = roomLimit(new THREE.Vector3(x, 0, z));
+    if (blocked(a, c) || blocked(c, b)) continue;
+    const l = Math.hypot(c.x - a.x, c.z - a.z) + Math.hypot(b.x - c.x, b.z - c.z);
+    if (l < bl) { bl = l; best = c; }
+  }
+  return best;
+}
 
 
 // 바닥을 가리키면 걸어갈 자리를 보여 주는 고리
@@ -407,7 +431,21 @@ ui.canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   ptr.down = true; ptr.id = e.pointerId; ptr.type = e.pointerType;
-  ptr.x = ptr.sx = e.clientX; ptr.y = ptr.sy = e.clientY; ptr.dragged = false;
+  ptr.x = ptr.sx = e.clientX; ptr.y = ptr.sy = e.clientY; ptr.dragged = false; ptr.walked = 0;
+  // 2026-11-14 게임처럼: 바닥을 0.2초 이상 꾹 누르고 있으면 손을 뗄 때까지 계속 걷는다(누른 채 옆으로 움직이면 방향을 튼다)
+  clearTimeout(ptr.holdTimer); ptr.hold = false;
+  if (rig.explore && state.allows('objectClick') && !asking) {
+    const hf = pickWorld(e.clientX, e.clientY);
+    if (hf && (hf.object === room.floor || lounge.isFloor(hf.object))) {
+      const pid = e.pointerId, pt = hf.point.clone();
+      ptr.holdTimer = setTimeout(() => {
+        if (!ptr.down || ptr.id !== pid || pinch || lounge.owns || !state.allows('objectClick')) return;
+        ptr.hold = true; ptr.dragged = true; route = null;
+        ui.app.classList.add('dragging'); unhoverObject(); showRing(null); ui.exploreHint.classList.add('done');
+        rig.startHold(pt);
+      }, 200);
+    }
+  }
   try { ui.canvas.setPointerCapture(e.pointerId); } catch (err) { /* 이미 끝난 포인터 */ }
 });
 
@@ -423,17 +461,26 @@ ui.canvas.addEventListener('pointermove', (e) => {
   }
   if (ptr.down && e.pointerId === ptr.id) {
     const moved = Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy);
-    if (!ptr.dragged && moved > CAMERA.dragThreshold) {
+    if (!ptr.dragged && moved > (ptr.type === 'touch' ? CAMERA.dragThresholdTouch : CAMERA.dragThreshold)) {
       ptr.dragged = true;
       if (state.allows('drag')) { ui.app.classList.add('dragging'); unhoverObject(); showRing(null); ui.exploreHint.classList.add('done'); }
     }
-    // 드래그 = 둘러보기. 가로는 조이스틱처럼: 누른 곳에서 오른쪽으로 멀수록 오른쪽으로 계속 돈다.
-    // 화면 끝에 닿아 마우스를 왼쪽으로 되돌려도 시선이 되돌아가지 않고(속도만 줄어듦) 그 방향을 유지한다. 세로는 드래그한 만큼.
-    if (ptr.dragged && state.allows('drag')) {
-      const off = e.clientX - ptr.sx, dead = 10;
-      const k = Math.max(0, Math.abs(off) - dead) / CAMERA.look.joyRange;
-      rig.turnRate = -Math.sign(off) * Math.min(1, k) * CAMERA.look.joy;
-      rig.addLook(0, e.clientY - ptr.y);
+    // 2026-11-14: 드래그 = 둘러보기. 마우스가 움직인 만큼만 시선이 돈다(가로·세로 모두). 마우스를 멈추면 회전도 바로 멈춘다.
+    // (전에는 가로가 '조이스틱' 방식이라, 누른 채 마우스를 멈춰도 누른 곳에서 벗어난 만큼 계속 돌았다)
+    // 2026-11-14 관람 걸음: 가로로 끌면 고개를 조금 돌리고, 위로 끌면 앞으로·아래로 끌면 뒤로 한두 걸음(한 번 끌 때 최대 1.4 m) 걷는다
+    if (ptr.hold || (ptr.dragged && state.allows('drag'))) {   // 2026-11-14(2): 가장자리에 닿으면 계속 돌기
+      const ex = CAMERA.look.edge * innerWidth;
+      rig.edgeDir = e.clientX < ex ? -1 : e.clientX > innerWidth - ex ? 1 : 0;
+    }
+    if (ptr.hold) rig.addLook(e.clientX - ptr.x);   // 꾹 눌러 걷는 중: 옆으로 움직인 만큼 방향을 튼다
+    else if (ptr.dragged && state.allows('drag')) {
+      clearTimeout(ptr.holdTimer);
+      const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
+      rig.addLook(dx);
+      if (Math.abs(dy) > Math.abs(dx) * 0.6) {
+        const G = CAMERA.walk.gesture, nw = THREE.MathUtils.clamp(ptr.walked - dy * CAMERA.walk.dragStep, -G, G);
+        if (nw !== ptr.walked) { rig.nudge(nw - ptr.walked); ptr.walked = nw; route = null; }
+      }
     }
     // 패키지 보기 각도는 고정(드래그로 돌리지 않음)
     ptr.x = e.clientX; ptr.y = e.clientY;
@@ -443,6 +490,12 @@ ui.canvas.addEventListener('pointermove', (e) => {
 });
 
 function endPointer(e) {
+  // 2026-11-14: 누름이 끝나면 라운지가 카메라를 맡고 있어도 원래 방의 누름·드래그 상태를 항상 정리한다
+  // (전에는 라운지 쪽으로 먼저 빠져나가 ptr.down·회전 속도가 남아 손을 뗀 뒤에도 계속 돌 수 있었다)
+  const mine = ptr.down && e.pointerId === ptr.id;
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = null;
+  if (mine) { rig.edgeDir = 0; clearTimeout(ptr.holdTimer); if (ptr.hold) { ptr.hold = false; rig.endHold(); } ptr.down = false; rig.turnRate = 0; ui.app.classList.remove('dragging'); }
   if (lounge.owns) {
     if (lounge.pointerUp(e) && e.type !== 'pointercancel') {   // 끌기가 아닌 누름: 라운지 물건이면 그 동작, 바닥이면 일어나기
       const h = pickWorld(e.clientX, e.clientY), k = lounge.pickKey(h?.object);
@@ -450,17 +503,13 @@ function endPointer(e) {
     }
     return;
   }
-  touches.delete(e.pointerId);
-  if (touches.size < 2) pinch = null;
-  if (!ptr.down || e.pointerId !== ptr.id) return;
-  ptr.down = false;
-  rig.turnRate = 0;
-  ui.app.classList.remove('dragging');
-  if (e.type === 'pointercancel' || ptr.dragged) return; // 드래그는 클릭으로 처리하지 않는다
+  if (!mine) return;
+  if (e.type === 'pointercancel' || e.type === 'lostpointercapture' || ptr.dragged) return; // 드래그는 클릭으로 처리하지 않는다
   handleTap(e.clientX, e.clientY);
 }
 ui.canvas.addEventListener('pointerup', endPointer);
 ui.canvas.addEventListener('pointercancel', endPointer);
+ui.canvas.addEventListener('lostpointercapture', endPointer);   // 2026-11-14: 창 밖에서 손을 떼는 등 pointerup을 못 받아도 누름 상태가 남지 않게
 // 휠 = 보는 방향으로 걷기
 let wheelAcc = 0;
 ui.canvas.addEventListener('wheel', (e) => {
@@ -523,28 +572,38 @@ ui.canvas.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDe
 function handleTap(x, y) {
   // rev5: 걷는 중 '바닥'을 누르면 멈추지 않고 그쪽으로 한 걸음 더 간다(누를 때마다 한 번씩 이동).
   // 바닥이 아닌 빈 곳(벽·하늘 등)을 누르면 그 자리에서 멈춘다
-  if (ptr.stopOnTap) {
-    ptr.stopOnTap = false;
-    const hh = pickWorld(x, y);
-    if (!(hh && (hh.object === room.floor || lounge.isFloor(hh.object) || hh.object.userData.openable || hh.object.userData.tileOf))) { stopMove('click'); return; }
-  }
+  // 2026-11-13: 걷는 중에도 누름은 멈춤이 아니라 그대로 동작한다(물건은 열고, 그 밖은 그쪽으로 걷는다). 멈춤은 휠 누르기·키보드로
+  ptr.stopOnTap = false;
   if (state.allows('doorClick')) {
     if (pick(doorHits, x, y)) openDoor();
     return;
   }
+  // 2026-11-13: 펼친 책·패키지 밖(빈 곳)을 누르면 바로 원래 방 화면으로 돌아간다(아래 '돌아가기' 단추를 찾지 않아도 된다)
   if (state.is(S.BOOK_READING)) {
-    if (isPkg(active)) { if (pick(active.hit, x, y)) pkgStep(1); return; }
+    if (isPkg(active)) { if (pick(active.hit, x, y)) pkgStep(1); else backToRoom(); return; }
     const h = pick(activeHits(), x, y);
     if (h?.object.userData.page === 'right') turn(1);
     else if (h?.object.userData.page === 'left') turn(-1);
+    else if (!h) backToRoom();
     return;
   }
   if (state.is(S.OBJECT_SELECTED)) {
-    if (pick(active.hit, x, y)) openBook();
+    if (pick(active.hit, x, y)) openBook(); else backToRoom();
     return;
   }
   if (state.allows('objectClick')) {
     const h = pickWorld(x, y);
+    // 2026-11-14: 문 너머(바깥)를 누르면 — 문 가까이면 나갈지 묻고, 멀면 문 쪽으로 한두 걸음
+    if (!h || h.object.userData.floor === undefined && h.point.z > -0.3) {
+      ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+      const g = new THREE.Vector3(); 
+      if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), g) && g.z > -0.45 && Math.abs(g.x) < DOOR_EXIT.hw + 0.3 && !lounge.insideRoom(rig.pos)) {
+        if (rig.pos.z > -2.0 && Math.abs(rig.pos.x) < DOOR_EXIT.hw + 0.4) { askExit(); return; }
+        const d = new THREE.Vector3(g.x * 0.3 - rig.pos.x, 0, -0.5 - rig.pos.z), l = d.length();
+        if (l > 0.05) { d.multiplyScalar(Math.min(CAMERA.walk.click, l) / l); rig.walkTo(new THREE.Vector3(rig.pos.x + d.x, 0, rig.pos.z + d.z), new THREE.Vector3(0, CAMERA.eye - 0.2, 4)); }
+        return;
+      }
+    }
     const o = h?.object.userData.openable;
     if (o) { select(o); return; }
     const tileOf = h?.object.userData.tileOf;
@@ -556,12 +615,26 @@ function handleTap(x, y) {
     if (h?.object.userData.toGuestbook) { const i = STATIONS.findIndex((x) => x[0] === '방명록'); if (i >= 0) goStation(i); return; }
     // 바닥을 누르면 그 자리까지 걸어간다
     // 바닥을 누르면 그쪽으로 한두 걸음만 걸어간다(멀리 눌러도 벽까지 가지 않는다)
-    if (h && (h.object === room.floor || lounge.isFloor(h.object))) {
-      const from = rig.target || rig.pos;
-      const d = new THREE.Vector3(h.point.x - from.x, 0, h.point.z - from.z);
-      const len = d.length();
-      if (len > CAMERA.walk.click) d.multiplyScalar(CAMERA.walk.click / len);
-      rig.walkTo(new THREE.Vector3(from.x + d.x, 0, from.z + d.z));
+    // 2026-11-13: 바닥이든 벽·책상 같은 장애물이든, 누른 곳까지 한 번에 걸어간다(방 안에서 갈 수 있는 가장 가까운 곳까지)
+    // 2026-11-14: 바닥을 클릭(터치)하면 그곳까지 걸어간다. 벽·물건 같은 바닥 아닌 곳은 손가락 터치일 때만 그 앞까지 간다
+    if (h && (ptr.type !== 'mouse' || h.object === room.floor || lounge.isFloor(h.object))) {
+      route = null;
+      const onFloor = h.object === room.floor || lounge.isFloor(h.object);
+      const p = h.point.clone();
+      // 2026-11-14 관람 걸음: 누른 쪽으로 한두 걸음(최대 1.4 m)만 걷는다. 벽·물건을 누르면 그 1.6 m 앞까지를 넘지 않는다
+      {
+        const d = new THREE.Vector3(p.x - rig.pos.x, 0, p.z - rig.pos.z), len = d.length();
+        const go = Math.min(CAMERA.walk.click, onFloor ? len : Math.max(0, len - 1.6));
+        d.multiplyScalar(len > 0.01 ? go / len : 0); p.set(rig.pos.x + d.x, 0, rig.pos.z + d.z);
+      }
+      const end = rig.limit(new THREE.Vector3(p.x, 0, p.z));
+      // 걷는 방향을 눈높이 정면으로 본다(위아래로 꺾지 않음). 아주 짧은 걸음은 시선을 그대로 둔다
+      const tv = new THREE.Vector3(end.x - rig.pos.x, 0, end.z - rig.pos.z), tl = tv.length();
+      const lk = tl > 0.3 ? new THREE.Vector3(end.x + tv.x / tl * 3, CAMERA.eye + 3 * Math.tan(CAMERA.look.level), end.z + tv.z / tl * 3) : null;
+      // 가는 길에 셸프·테이블이 있으면 그 모서리를 돌아 걷는다(물건을 뚫고 지나가지 않게)
+      const via = lounge.insideRoom(end) || lounge.insideRoom(rig.pos) ? null : detour(rig.pos, end);
+      if (via) { route = [[via, null], [end, lk]]; stepRoute(true); }
+      else if (tl > 0.02) rig.walkTo(end, lk);
       showRing(null); ui.exploreHint.classList.add('done');
     }
   }
@@ -595,9 +668,11 @@ let stationIdx = 0;
 let route = null;
 function stepRoute(start) {
   if (!route || lounge.owns) return;
-  if (!start && (rig.target || rig.isMoving?.())) return;
+  if (!start && rig.target && Math.hypot(rig.target.x - rig.pos.x, rig.target.z - rig.pos.z) > 0.45) return;   // 2026-11-13: 경유점에 거의 닿으면 멈추지 않고 다음으로 이어 걷는다
   const [p, lookAt, lens] = route.shift();
-  rig.walkTo(p.clone(), lookAt || new THREE.Vector3(route[0] ? route[0][0].x : p.x, 1.2, route[0] ? route[0][0].z : p.z), lens);
+  // 2026-11-13: 경유점마다 고개를 휙 돌리지 않고, 처음부터 마지막에 바라볼 곳을 향해 천천히 돈다
+  const fin = route.length ? route[route.length - 1] : null;
+  rig.walkTo(p.clone(), lookAt || (fin && fin[1]) || new THREE.Vector3(route[0] ? route[0][0].x : p.x, 1.2, route[0] ? route[0][0].z : p.z), lens || (fin && fin[2]));
   if (!route.length) route = null;
 }
 function goStation(i) {
@@ -688,11 +763,10 @@ function exitAtDoor() {
   const p = rig.pos, inDoor = Math.abs(p.x) < DOOR_EXIT.hw;
   const facing = rig.forward().z > 0.55;
   const near = inDoor && p.z > -0.9 && facing;
-  if (near !== doorNear) {
-    doorNear = near;
-    if (near) ui.toast.textContent = '나가려면 아래 관람 지점에서 ‘출구’를 누르세요';
-    ui.toast.classList.toggle('on', near);
-  }
+  doorNear = near;
+  // 2026-11-14: 문 쪽을 보고 문턱(z −0.5)까지 와서도 계속 앞으로 걸으려 하면(꾹 누르기·↑키·휠·위로 끌기) 나갈지 묻는다
+  const pushing = rig.holding || rig.keys.f > 0 || performance.now() - (rig.pushT || 0) < 400;
+  if (near && p.z > -0.62 && pushing) { rig.endHold(); rig.keys.f = 0; ptr.hold = false; askExit(); }
 }
 async function exitRoom() {
   if (!state.is(S.ROOM_EXPLORATION, S.OBJECT_HOVER)) return;
@@ -723,7 +797,7 @@ addEventListener('keydown', (e) => {
   ui.exploreHint.classList.add('done');
 });
 addEventListener('keyup', (e) => { const k = KEYMAP[e.code]; if (k && rig.keys[k[0]] === k[1]) rig.keys[k[0]] = 0; });
-addEventListener('blur', () => { rig.keys.f = rig.keys.t = 0; rig.turnRate = 0; });
+addEventListener('blur', () => { rig.edgeDir = 0; rig.keys.f = rig.keys.t = 0; rig.turnRate = 0; rig.endHold(); ptr.hold = false; clearTimeout(ptr.holdTimer); });
 
 /* ---------- SCENE 01: 문 호버 ---------- */
 function setDoorHover(on) {
@@ -787,9 +861,10 @@ function arrive() {
   rig.syncBase();
   // rev5: 도착 = '시크릿 책장' 관람 지점(눈높이·렌즈도 그 지점 값)
   const st = STATIONS[CAMERA.arriveStation ?? 0], lens = st?.[3] || {};
-  rig.pos.y = lens.eye ?? CAMERA.eye;
-  rig.eye = rig.tEye = lens.eye ?? CAMERA.eye;
-  rig.fov = rig.tFov = (rig.fovScaleIn !== 1 && lens.pfov) || lens.fov || CAMERA.fovIn;
+  // 2026-11-14: 도착 뒤로는 눈높이·렌즈를 하나로 고정한다(관람 지점마다 높이·확대가 바뀌는 연출 없음)
+  rig.pos.y = CAMERA.eye;
+  rig.eye = rig.tEye = CAMERA.eye;
+  rig.fov = rig.tFov = rig.walkFov = (rig.fovScaleIn !== 1 && lens.pfov) || lens.fov || CAMERA.fovIn;
   stationIdx = CAMERA.arriveStation ?? 0;
   [...ui.stationList.children].forEach((b, k) => b.classList.toggle('on', k === stationIdx));
   arrivedAt = performance.now();
@@ -1023,6 +1098,7 @@ function selectInPlace(o) {
   // 고개만 돌린다(위치·렌즈 그대로). 이미 화면 가운데 근처면 거의 움직이지 않는다
   const d = _bp.clone().sub(rig.pos);
   rig.tYaw = rig.yaw + Math.atan2(Math.sin(Math.atan2(-d.x, -d.z) - rig.yaw), Math.cos(Math.atan2(-d.x, -d.z) - rig.yaw)) * 0.85;
+  rig.focus = true;   // 2026-11-14: 고른 책을 볼 때만 위아래로 더 숙이거나 들 수 있다(명시적인 상호작용)
   rig.tPitch = THREE.MathUtils.clamp(Math.atan2(d.y, Math.hypot(d.x, d.z)), -CAMERA.look.pitch, CAMERA.look.pitch * 0.8);
   const card = o.pageCard;
   if (card) gsap.to(card.position, { x: card.userData.rest.x + 0.02, z: card.userData.rest.z + 0.19, duration: 0.55, ease: 'sine.inOut' });
@@ -1608,8 +1684,10 @@ requestAnimationFrame(reveal);
 setTimeout(reveal, 3000);   // 화면 갱신이 멈춘 환경에서도 로더가 남지 않게
 
 // 브라우저 자동화 테스트용 훅
+// 2026-11-13: 늦게라도 3D가 준비되면, 시간 초과로 떠 있던 대체 화면을 걷는다
+if (!window.__noWebglHard) document.documentElement.classList.remove('no-webgl');
 window.__hirang = {
-  state: () => state.get(), openDoor, select: (i) => select(room.openables[i]), turn, backToRoom,
+  state: () => state.get(), openDoor, pickWorld, isFloorObj: (o) => o === room.floor || lounge.isFloor(o), select: (i) => select(room.openables[i]), turn, backToRoom,
   closeBook: () => ui.rClose.click(), openables: room.openables.map((o) => o.label),
   spread: () => active?.spread, camera, door: doorFx, rig,
   project(o3d) { const v = o3d.getWorldPosition(new THREE.Vector3()).project(camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; },

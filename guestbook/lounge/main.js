@@ -94,7 +94,8 @@ const PAGE_TRAY = () => { const p = tray.localToWorld(new THREE.Vector3(0, 0.019
 const fwdOf = (c) => new THREE.Vector2(Math.sin(c.ry), Math.cos(c.ry));
 function deskAt(which, dist, dy, dry = 0) {
   const c = which === 'write' ? LAYOUT.writeChair : LAYOUT.readChair, f = fwdOf(c);
-  return { pos: new THREE.Vector3(c.x + f.x * dist, T.h + dy, c.z + f.y * dist), ry: Math.atan2(-f.x, -f.y) + dry, f };
+  // 2026-11-13: 종이·책은 어느 의자에서든 책상 한가운데에 놓는다(모서리 X). 위쪽은 앉은 사람의 앞을 향한다
+  return { pos: new THREE.Vector3(T.x, T.h + dy, T.z), ry: Math.atan2(-f.x, -f.y) + dry, f };
 }
 const PAGE_AT = (w) => deskAt(w, 0.62, 0.0007, 0.05);
 const BOOK_AT = (w) => deskAt(w, 0.84, 0.0035);
@@ -321,7 +322,7 @@ function writeOrbit() {
   // 좁은 화면: 위 단추 줄(약 110px)과 아래 입력 칸 사이, 실제로 보이는 빈 곳의 한가운데에 종이를 꽉 차게 둔다
     let r;
     if (narrow()) {
-      const H = innerHeight, top = 110, fr = $('writer').getBoundingClientRect(), bottom = (fr.height ? fr.top : H * 0.5) - 14;
+      const sb = $('stand')?.getBoundingClientRect(), H = innerHeight, top = sb && sb.height ? sb.bottom + 10 : 110, fr = $('writer').getBoundingClientRect(), bottom = (fr.height ? fr.top : H * 0.5) - 14;
       const vis = Math.max(0.2, (bottom - top) / H), cy = (top + bottom) / 2 / H;
       r = fitR(0.23, 0.33, fov, vis * 0.94, 0.92);
       const sh = (0.5 - cy) * 2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2) * r; c.add(new THREE.Vector3(-f.x * sh, 0, -f.y * sh));

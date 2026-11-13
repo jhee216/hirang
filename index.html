@@ -4153,7 +4153,8 @@ function fpFmt(t){
     $('fpSheet').style.setProperty('--bk2',b.color);
     /* 2026-11-11: 아홉 큐레이션 '책 속 한 페이지'는 클라이언트가 준 페이지 원본(experience/assets/goods/소개글1–9.png → assets/site/intro/{id}.webp)을 그대로 보여 준다.
        바깥 배경 없이 페이지 디자인만. 원문 글자는 화면 낭독용으로 함께 둔다 */
-    var img=/^0[1-9]$/.test(b.id)?'assets/site/intro/'+b.id+'.webp':'';
+    // 2026-11-13: 클라이언트 요청 — 페이지 원본 이미지 대신 기존처럼 글을 스크롤해 읽는 화면으로 되돌린다
+    var img='';
     $('fpModal').classList.toggle('fp-img',!!img);
     document.querySelector('#fpPanel .fp-plabel').textContent=img?'페이지 크기':'글자 크기';
     $('fpText').innerHTML=img?'<img class="fp-page" src="'+img+'" alt="" decoding="async"><div class="fp-sr">'+fpFmt(b.fullPage)+'</div>':fpFmt(b.fullPage);
@@ -7004,7 +7005,7 @@ function fpFmt(t){
 </script>
 <script id="hirang-image-assets">
 (function(){
- const images=["assets/site/1fbf0b325a08.webp", "assets/site/f095e01a610d.webp", "assets/site/20ee9148d644.webp", "assets/site/18fd8e982c5a.webp", "assets/site/42c38f633613.webp", "assets/site/6308eb502ece.webp", "assets/site/7a6b3a190c23.webp", "assets/site/b400528da855.webp", "assets/site/d5930a705e2f.webp", "assets/site/7d9047aa370c.webp"];
+ const images=["assets/site/1fbf0b325a08.webp", "assets/site/f095e01a610d.webp", "assets/site/20ee9148d644.webp", "assets/site/18fd8e982c5a.webp", "assets/site/42c38f633613.webp", "assets/site/6308eb502ece.webp", "assets/site/7a6b3a190c23.webp", "assets/site/b400528da855.webp", "assets/site/pkg-card-20261113.webp", "assets/site/7d9047aa370c.webp"];
  const entries=[
   {i:0,t:'브랜드 패키지 · 데스크'}, {i:1,t:'하이랑 라벨 시스템'},
   {i:2,t:'패키지 · 라이프스타일'}, {i:3,t:'웹사이트 디자인'},

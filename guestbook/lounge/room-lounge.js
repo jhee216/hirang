@@ -78,6 +78,7 @@ function buildUI(root) {
 
 export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root, coarse }) {
   let tunnelFloor = null;
+  const pickExtra = [];   // 2026-11-13: 장면에 직접 붙인 통로(벽·발판)도 누를 수 있게
   /* ---------- 장면 ---------- */
   const world = buildLounge({ sym, logoImg, merged: true });
   const G = world.group;
@@ -97,10 +98,11 @@ export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root
     const tunnel = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: GAP + 0.02, bevelEnabled: false, curveSegments: 48 }), wallM);
     tunnel.rotation.y = Math.PI / 2; tunnel.position.set(4.39, 0, door.z);   // 모양 x → 장면 −z, 두께 → +x
     tunnel.receiveShadow = true;
-    const fl = new THREE.Mesh(new THREE.PlaneGeometry(GAP + 0.06, R * 2 + 0.1), new THREE.MeshStandardMaterial({ color: '#F4E9D6', roughness: 0.85 }));
-    fl.rotation.x = -Math.PI / 2; fl.position.set(4.4 + GAP / 2, 0.001, door.z); fl.receiveShadow = true; fl.userData.floor = true;
+    // 2026-11-13: 발판이 원래 방 벽 두께(x 4.2~4.4)까지 덮게 — 전에는 그 사이가 비어 바깥(밤하늘색)이 보이고 눌러도 걸어가지 않았다
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(GAP + 0.26, R * 2 + 0.1), new THREE.MeshStandardMaterial({ color: '#F4E9D6', roughness: 0.85 }));
+    fl.rotation.x = -Math.PI / 2; fl.position.set(4.18 + (GAP + 0.26) / 2, 0.001, door.z); fl.receiveShadow = true; fl.userData.floor = true;
     scene.add(tunnel, fl);
-    tunnelFloor = fl;
+    tunnelFloor = fl; pickExtra.push(tunnel, fl);
   }
   G.updateMatrixWorld(true);
   const L2W = (v) => G.localToWorld(v.clone());
@@ -199,7 +201,8 @@ export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root
   const facing = (f) => Math.atan2(-f.x, -f.y);
   function deskAt(which, dist, dy, dry = 0) {
     const c = which === 'write' ? WCc : RCc, f = fwdOf(c);
-    return { pos: new THREE.Vector3(c.x + f.x * dist, T.h + dy, c.z + f.y * dist), ry: facing(f) + dry, f };
+    // 2026-11-13: 종이·책은 어느 의자에서든 책상 한가운데에 놓는다(모서리 X). 위쪽은 앉은 사람의 앞을 향한다
+    return { pos: new THREE.Vector3(T.x, T.h + dy, T.z), ry: facing(f) + dry, f };
   }
   const PAGE_AT = (w) => deskAt(w, 0.62, 0.0007, 0.05);
   const BOOK_AT = (w) => deskAt(w, 0.84, 0.0035);
@@ -346,7 +349,7 @@ export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root
     // 좁은 화면: 위 단추 줄(약 110px)과 아래 입력 칸 사이, 실제로 보이는 빈 곳의 한가운데에 종이를 꽉 차게 둔다
     let r;
     if (narrow()) {
-      const H = innerHeight, top = 110, fr = q('writer').getBoundingClientRect(), bottom = (fr.height ? fr.top : H * 0.5) - 14;
+      const sb = q('stand')?.getBoundingClientRect(), H = innerHeight, top = sb && sb.height ? sb.bottom + 10 : 110, fr = q('writer').getBoundingClientRect(), bottom = (fr.height ? fr.top : H * 0.5) - 14;
       const vis = Math.max(0.2, (bottom - top) / H), cy = (top + bottom) / 2 / H;
       r = fitR(0.23, 0.33, fov, vis * 0.94, 0.92);
       const sh = (0.5 - cy) * 2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2) * r; c.add(new THREE.Vector3(-f.x * sh, 0, -f.y * sh));
@@ -579,8 +582,9 @@ export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root
       orbit.tphi = clamp(orbit.tphi - dx * 0.005, orbit.phiMin, orbit.phiMax);
       orbit.ttheta = clamp(orbit.ttheta - dy * 0.004, orbit.thMin, orbit.thMax);
     } else if (mode === 'seat') {
-      look.tYaw = look.baseYaw + clamp(wrapPi(look.tYaw - dx * 0.0035 - look.baseYaw), -1.1, 1.1);
-      look.tPitch = clamp(look.tPitch - dy * 0.0028, -0.75, 0.45);
+      // 2026-11-14: 앉아서 둘러볼 때도 크게 휙 돌지 않게 — 감도를 낮추고 위아래는 눈높이 근처로만
+      look.tYaw = look.baseYaw + clamp(wrapPi(look.tYaw - dx * 0.0015 - look.baseYaw), -1.0, 1.0);
+      look.tPitch = clamp(look.tPitch - dy * 0.0012, -0.3, 0.12);
     }
   }
   // 떼었을 때: 끌기가 아니었으면 true(=클릭으로 처리할 것)
@@ -619,11 +623,12 @@ export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root
     if (!owns || camFly) return;
     if (orbit) {
       const a = 1 - Math.exp(-5 * dt);
-      orbit.r += (orbit.tr - orbit.r) * a; orbit.theta += (orbit.ttheta - orbit.theta) * a; orbit.phi += (orbit.tphi - orbit.phi) * a;
+      const ad = 1 - Math.exp(-18 * dt);   // 2026-11-14: 끄는 각도는 짧게 부드럽게(뚝뚝 끊기지 않고, 멈추면 곧 멈춤)
+      orbit.r += (orbit.tr - orbit.r) * a; orbit.theta += (orbit.ttheta - orbit.theta) * ad; orbit.phi += (orbit.tphi - orbit.phi) * ad;
       camera.position.copy(L2W(orbitPosL(orbit))); camera.lookAt(L2W(orbit.center));
       if (Math.abs(camera.fov - orbit.fov) > 1e-3) { camera.fov = orbit.fov; camera.updateProjectionMatrix(); }
     } else if (mode === 'seat') {
-      const k = 1 - Math.exp(-2.6 * dt);
+      const k = 1 - Math.exp(-8 * dt);   // 2026-11-14: 끈 만큼 부드럽게 따라가고, 멈추면 곧 멈춤
       look.yaw += (look.tYaw - look.yaw) * k; look.pitch += (look.tPitch - look.pitch) * k;
       euler.set(look.pitch, look.yaw, 0); camera.quaternion.setFromEuler(euler);
       if (Math.abs(camera.fov - look.fov) > 1e-3) { camera.fov = look.fov; camera.updateProjectionMatrix(); }
@@ -632,7 +637,7 @@ export async function mountLounge({ scene, camera, rig, door, sym, logoImg, root
   const pickKey = (obj) => PICK.get(obj) ?? null;
 
   return {
-    group: G, glow, floor: world.floor, isFloor: (o) => o === world.floor || o === tunnelFloor, lights: [spot, ledgeLight, pageGlow.light], station: STATION,
+    group: G, glow, floor: world.floor, isFloor: (o) => o === world.floor || o === tunnelFloor, pickExtra, lights: [spot, ledgeLight, pageGlow.light], station: STATION,
     get owns() { return owns; }, get mode() { return mode; }, get busy() { return busy; },
     pickKey, act, label: (k) => LABEL[k], inLounge, insideRoom, limitW, update, pointerDown, pointerMove, pointerUp, wheel, escape, keydown,
     sit, stand, openBook, openWriting, get pages() { return pages; }, set pages(v) { pages = v; }, book, page, traces, setLevel,

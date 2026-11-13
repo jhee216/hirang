@@ -111,15 +111,10 @@ export function buildRoom({ sym, packages, sideDoor = null }) {
   const dw = DOOR.width / 2 + 0.06;
   for (const s of [-1, 1]) {
     const w = RX - dw, x = s * (dw + w / 2);
-    const face = new THREE.Mesh(new THREE.BoxGeometry(w, RH, 0.02), wallMat);
-    face.position.set(x, RH / 2, z0 - 0.01); face.receiveShadow = true;
-    group.add(face);
+    // 2026-11-14: 문 둘레의 얇은 회벽 판(양옆·위)은 뺐다 — 바로 뒤 2 cm에 문 벽체(같은 아이보리, 문 모양으로 뚫림)가 있어
+    // 판의 모서리가 문 둘레에 사각형 선으로 보였다. 징두리만 남긴다
     wainscot(w, x, z0 - 0.02, Math.PI);
   }
-  const LT = DOOR.height + DOOR.ring + 0.01;   // rev4: 초록 테두리 꼭대기 위에서 시작(테두리를 덮지 않게)
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(dw * 2, RH - LT, 0.02), wallMat);
-  lintel.position.set(0, LT + (RH - LT) / 2, z0 - 0.01); lintel.receiveShadow = true;
-  group.add(lintel);
   // 왼쪽 벽(햇빛 드는 아치 창)·안뜰·계단·떠 있는 페이지는 architecture.js
   const arch = buildArchitecture(group, ROOM);
 
