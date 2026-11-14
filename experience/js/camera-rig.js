@@ -163,8 +163,12 @@ export class CameraRig {
       // 2026-11-14 고개: 목표 방향으로 부드럽게 돌되 초당 최대 각도를 넘지 않는다(손으로 돌릴 때 약 40°/s, 걸으며 저절로 돌 때 약 30°/s).
       // 위아래는 눈높이 정면 근처로만(바닥·벽·천장으로 시선이 꺾이지 않게)
       if (!this.focus) this.tPitch = clamp(this.tPitch, CAMERA.look.pitchMin, CAMERA.look.pitchMax);
-      const k = 1 - Math.exp(-CAMERA.look.damping * dt), capY = (this.dragLook ? CAMERA.look.maxTurn : CAMERA.look.autoTurn) * dt, capP = 0.25 * dt;
-      this.yaw += clamp(wrapPi(this.tYaw - this.yaw) * k, -capY, capY);
+      const k = 1 - Math.exp(-CAMERA.look.damping * dt), capY = CAMERA.look.autoTurn * dt, capP = 0.25 * dt;
+      if (this.dragLook) {
+        // 2026-11-14(4): 마우스로 돌릴 때 — 속도 상한 없이 지수 보간만(시간 상수 1/dragSmooth 초, 프레임 속도와 무관).
+        // 목표를 넘어가지 않고(과회전·관성 없음), 마우스를 멈추면 약 0.25초 안에 멈춘다. 상한이 있으면 일정 속도로 끌려가다 뚝 멈춰 끊겨 보였다
+        this.yaw += wrapPi(this.tYaw - this.yaw) * (1 - Math.exp(-CAMERA.look.dragSmooth * dt));
+      } else this.yaw += clamp(wrapPi(this.tYaw - this.yaw) * k, -capY, capY);
       this.pitch += clamp((this.tPitch - this.pitch) * k, -capP, capP);
       // 걸을 때만 아주 작은 상하 흔들림(걸음 느낌)
       // 2026-11-14: 걷는 동안만 발을 디딜 때 살짝(최대 1.2 cm) 내려앉는다 — 서 있으면 눈높이 그대로
