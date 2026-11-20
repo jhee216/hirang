@@ -877,7 +877,9 @@ function arrive() {
 }
 
 // 사이트의 '시크릿 룸으로'에서 돌아온 경우(?return=room): 문 앞을 건너뛰고 독서구역 안에서 바로 시작한다
-const returning = new URLSearchParams(location.search).get('return') === 'room';
+// 2026-11-20: 방명록 링크(?to=guestbook)는 옛 단독 방명록 페이지가 아니라 3D 독서구역 안의 방명록 라운지에서 바로 시작한다
+const toGuestbook = new URLSearchParams(location.search).get('to') === 'guestbook';
+const returning = toGuestbook || new URLSearchParams(location.search).get('return') === 'room';
 function enterRoomDirect() {
   doorFx.open = DOOR.openAngle;
   rig.pos.set(CAMERA.arrive[0], CAMERA.arrive[1], isPortrait() ? CAMERA.portrait.arriveZ : CAMERA.arrive[2]);
@@ -1616,6 +1618,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if (returning) enterRoomDirect();
+if (toGuestbook) {   // 라운지 입구 자리에 서서 책상 쪽을 본다(걸어가는 연출 없이 바로)
+  const st = lounge.station, d = new THREE.Vector3().subVectors(st.look, st.pos);
+  rig.pos.set(st.pos.x, CAMERA.eye, st.pos.z); rig.target = null;
+  rig.yaw = rig.tYaw = Math.atan2(-d.x, -d.z); rig.pitch = rig.tPitch = CAMERA.look.level;
+  const gi = STATIONS.findIndex((x) => x[0] === '방명록');
+  if (gi >= 0) { stationIdx = gi; [...ui.stationList.children].forEach((b, k) => b.classList.toggle('on', k === gi)); }
+}
 
 // 첫 프레임 이후 로더 제거 → 문 등장(돌아온 경우에는 바로 독서구역)
 /* ---------- 조명 구역: 지금 보이는 곳의 조명만 켠다(조명 수가 곧 모든 픽셀의 계산량이라 버벅임의 주원인) ---------- */
