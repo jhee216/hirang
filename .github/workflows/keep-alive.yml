@@ -1,0 +1,30 @@
+name: HIRANG Supabase Keep Alive
+
+on:
+  schedule:
+    - cron: '0 0,8,16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ping HIRANG
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          curl --fail --silent --show-error \
+            --max-time 30 \
+            -X POST \
+            "${SUPABASE_URL%/}/rest/v1/rpc/hirang_public" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -o /dev/null
+          echo "HIRANG connection successful"
